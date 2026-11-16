@@ -106,3 +106,19 @@
 2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910004, timeout of 40000ms exceeded
 2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910002, timeout of 40000ms exceeded
 2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910007, timeout of 40000ms exceeded
+2026-11-16T15:37:16.498+08:00  INFO 39342 --- [payment-registry] [nnectionExpirer] o.a.z.server.NIOServerCnxnFactory        : ConnnectionExpirerThread interrupted
+2026-11-16T15:37:16.499+08:00  INFO 39342 --- [payment-registry] [/127.0.0.1:2181] o.a.z.server.NIOServerCnxnFactory        : accept thread exitted run method
+2026-11-16T15:37:16.502+08:00  INFO 39342 --- [payment-registry] [electorThread-2] o.a.z.server.NIOServerCnxnFactory        : selector thread exitted run method
+2026-11-16T15:37:16.503+08:00  INFO 39342 --- [payment-registry] [electorThread-0] o.a.z.server.NIOServerCnxnFactory        : selector thread exitted run method
+2026-11-16T15:37:16.503+08:00  INFO 39342 --- [payment-registry] [electorThread-1] o.a.z.server.NIOServerCnxnFactory        : selector thread exitted run method
+2026-11-16T15:37:16.543+08:00  INFO 39342 --- [payment-registry] [ionShutdownHook] o.a.zookeeper.server.ZooKeeperServer     : shutting down
+2026-11-16T15:37:16.546+08:00  INFO 39342 --- [payment-registry] [ionShutdownHook] o.a.zookeeper.server.RequestThrottler    : Shutting down
+2026-11-16T15:37:16.549+08:00  INFO 39342 --- [payment-registry] [equestThrottler] o.a.zookeeper.server.RequestThrottler    : Draining request throttler queue
+2026-11-16T15:37:16.558+08:00  INFO 39342 --- [payment-registry] [equestThrottler] o.a.zookeeper.server.RequestThrottler    : RequestThrottler shutdown. Dropped 0 requests
+2026-11-16T15:37:16.564+08:00  INFO 39342 --- [payment-registry] [ionShutdownHook] o.a.zookeeper.server.SessionTrackerImpl  : Shutting down
+2026-11-16T15:37:16.570+08:00  INFO 39342 --- [payment-registry] [ionShutdownHook] o.a.z.server.PrepRequestProcessor        : Shutting down
+2026-11-16T15:37:16.573+08:00  INFO 39342 --- [payment-registry] [ionShutdownHook] o.a.z.server.SyncRequestProcessor        : Shutting down
+2026-11-16T15:37:16.573+08:00  INFO 39342 --- [payment-registry] [:0 cport:2181):] o.a.z.server.PrepRequestProcessor        : PrepRequestProcessor exited loop!
+2026-11-16T15:37:16.576+08:00  INFO 39342 --- [payment-registry] [   SyncThread:0] o.a.z.server.SyncRequestProcessor        : SyncRequestProcessor exited!
+2026-11-16T15:37:16.582+08:00  INFO 39342 --- [payment-registry] [ionShutdownHook] o.a.z.server.FinalRequestProcessor       : shutdown of request processor complete
+2026-11-16T15:37:16.590+08:00  INFO 39342 --- [payment-registry] [ionShutdownHook] c.q.payment.registry.EmbeddedZooKeeper   : 内嵌 ZooKeeper 已停止

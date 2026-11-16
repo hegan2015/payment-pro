@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/payment-account/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-accounting/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-cashier/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-channel/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-common/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-dtx/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-facade/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-gateway/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-member/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-notify/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-payment/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-recon/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-registry/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-risk/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-settle/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/payment-trade/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/resources" charset="UTF-8" />
+  </component>
+</project>

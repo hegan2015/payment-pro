@@ -178,3 +178,249 @@
 14:25:38.125 [DubboServerHandler-192.168.31.85:20887-thread-10] [31575c60b4ff4af28301e93f3daa802c] INFO  c.q.p.dtx.TccParticipantTemplate - TCC 空回滚 xid=Tfadd726b0a15435282a185d46496f57e branch=Tfadd726b0a15435282a185d46496f57e-B2
 14:25:38.171 [DubboServerHandler-192.168.31.85:20887-thread-11] [b74db53dabb34cde8c6d47cd9b2cfdf6] INFO  c.q.p.channel.service.ChannelService - 渠道预授权(TCC Try) bizNo=R15 type=REFUND amount=2000
 14:25:38.184 [DubboServerHandler-192.168.31.85:20887-thread-12] [b74db53dabb34cde8c6d47cd9b2cfdf6] INFO  c.q.p.channel.service.ChannelService - 渠道退款(TCC Confirm) bizNo=R15
+15:20:38.377 [NettyServerWorker-3-2] [] INFO  o.a.d.r.t.netty4.NettyServerHandler -  [DUBBO] IdleStateEvent triggered, close channel NettyChannel [channel=[id: 0x2c58e5ea, L:/[2409:8a28:4a0:4c1:0:0:0:140]:20887 - R:/[2409:8a28:4a0:4c1:0:0:0:140]:60679]], dubbo version: 3.2.14, current host: 192.168.31.85
+15:20:38.377 [NettyServerWorker-3-2] [] INFO  o.a.d.r.t.netty4.NettyChannel -  [DUBBO] Close netty channel [id: 0x2c58e5ea, L:/[2409:8a28:4a0:4c1:0:0:0:140]:20887 - R:/[2409:8a28:4a0:4c1:0:0:0:140]:60679], dubbo version: 3.2.14, current host: 192.168.31.85
+15:20:38.382 [NettyServerWorker-3-2] [] INFO  o.a.d.r.t.netty4.NettyServerHandler -  [DUBBO] The connection of /[2409:8a28:4a0:4c1:0:0:0:140]:60679 -> /[2409:8a28:4a0:4c1:0:0:0:140]:20887 is disconnected., dubbo version: 3.2.14, current host: 192.168.31.85
+15:20:53.607 [NettyServerWorker-3-3] [] INFO  o.a.d.r.t.netty4.NettyServerHandler -  [DUBBO] IdleStateEvent triggered, close channel NettyChannel [channel=[id: 0x8d07a3cc, L:/[2409:8a28:4a0:4c1:0:0:0:140]:20887 - R:/[2409:8a28:4a0:4c1:0:0:0:140]:60691]], dubbo version: 3.2.14, current host: 192.168.31.85
+15:20:53.608 [NettyServerWorker-3-3] [] INFO  o.a.d.r.t.netty4.NettyChannel -  [DUBBO] Close netty channel [id: 0x8d07a3cc, L:/[2409:8a28:4a0:4c1:0:0:0:140]:20887 - R:/[2409:8a28:4a0:4c1:0:0:0:140]:60691], dubbo version: 3.2.14, current host: 192.168.31.85
+15:20:53.609 [NettyServerWorker-3-3] [] INFO  o.a.d.r.t.netty4.NettyServerHandler -  [DUBBO] The connection of /[2409:8a28:4a0:4c1:0:0:0:140]:60691 -> /[2409:8a28:4a0:4c1:0:0:0:140]:20887 is disconnected., dubbo version: 3.2.14, current host: 192.168.31.85
+15:20:54.380 [NettyServerWorker-3-1] [] INFO  o.a.d.r.t.netty4.NettyServerHandler -  [DUBBO] IdleStateEvent triggered, close channel NettyChannel [channel=[id: 0x21772dca, L:/[2409:8a28:4a0:4c1:0:0:0:140]:20887 - R:/[2409:8a28:4a0:4c1:0:0:0:140]:60675]], dubbo version: 3.2.14, current host: 192.168.31.85
+15:20:54.380 [NettyServerWorker-3-1] [] INFO  o.a.d.r.t.netty4.NettyChannel -  [DUBBO] Close netty channel [id: 0x21772dca, L:/[2409:8a28:4a0:4c1:0:0:0:140]:20887 - R:/[2409:8a28:4a0:4c1:0:0:0:140]:60675], dubbo version: 3.2.14, current host: 192.168.31.85
+15:20:54.382 [NettyServerWorker-3-1] [] WARN  o.a.d.r.transport.AbstractServer -  [DUBBO] All clients has disconnected from /[2409:8a28:4a0:4c1:0:0:0:140]:20887. You can graceful shutdown now., dubbo version: 3.2.14, current host: 192.168.31.85, error code: 99-0. This may be caused by unknown error in remoting module, go to https://dubbo.apache.org/faq/99/0 to find instructions. 
+15:20:54.382 [NettyServerWorker-3-1] [] INFO  o.a.d.r.t.netty4.NettyServerHandler -  [DUBBO] The connection of /[2409:8a28:4a0:4c1:0:0:0:140]:60675 -> /[2409:8a28:4a0:4c1:0:0:0:140]:20887 is disconnected., dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:16.418 [DubboShutdownHook] [] INFO  o.a.dubbo.config.DubboShutdownHook -  [DUBBO] Run shutdown hook now., dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:16.423 [SpringApplicationShutdownHook] [] INFO  o.a.d.c.deploy.DefaultModuleDeployer -  [DUBBO] Dubbo Module[1.1.1] is stopping., dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:16.423 [DubboShutdownHook] [] INFO  o.a.dubbo.config.DubboShutdownHook -  [DUBBO] Dubbo shutdown hooks execute now. Dubbo Application[1.1](payment-channel), dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:16.434 [SpringApplicationShutdownHook] [] INFO  o.a.d.r.zookeeper.ZookeeperRegistry -  [DUBBO] Unregister: dubbo://192.168.31.85:20887/com.qoder.payment.facade.HealthFacade?application=payment-channel&deprecated=false&dubbo=2.0.2&dynamic=true&generic=false&group=payment-channel&interface=com.qoder.payment.facade.HealthFacade&ipv6=2409:8a28:4a0:4c1:0:0:0:140&methods=ping&prefer.serialization=fastjson2,hessian2&release=3.2.14&retries=0&revision=1.0.0&service-name-mapping=true&side=provider&timeout=5000&timestamp=1794810322839, dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:16.457 [SpringApplicationShutdownHook] [] INFO  o.a.d.r.zookeeper.ZookeeperRegistry -  [DUBBO] Unregister: dubbo://192.168.31.85:20887/com.qoder.payment.facade.channel.ChannelFacade?application=payment-channel&deprecated=false&dubbo=2.0.2&dynamic=true&generic=false&interface=com.qoder.payment.facade.channel.ChannelFacade&ipv6=2409:8a28:4a0:4c1:0:0:0:140&methods=listTrades&prefer.serialization=fastjson2,hessian2&release=3.2.14&retries=0&revision=1.0.0&service-name-mapping=true&side=provider&timeout=5000&timestamp=1794810322817, dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:16.496 [SpringApplicationShutdownHook] [] INFO  o.a.d.r.zookeeper.ZookeeperRegistry -  [DUBBO] Unregister: dubbo://192.168.31.85:20887/com.qoder.payment.facade.tcc.TccParticipantFacade?application=payment-channel&deprecated=false&dubbo=2.0.2&dynamic=true&generic=false&group=channel&interface=com.qoder.payment.facade.tcc.TccParticipantFacade&ipv6=2409:8a28:4a0:4c1:0:0:0:140&methods=cancel,confirm,tryAction&prefer.serialization=fastjson2,hessian2&release=3.2.14&retries=0&revision=1.0.0&service-name-mapping=true&side=provider&timeout=5000&timestamp=1794810322256, dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:16.505 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+org.apache.zookeeper.ClientCnxn$EndOfStreamException: Unable to read additional data from server sessionid 0x10000aacdb40005, likely server has closed socket
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doIO(ClientCnxnSocketNIO.java:77)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:350)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:16.505 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+org.apache.zookeeper.ClientCnxn$EndOfStreamException: Unable to read additional data from server sessionid 0x10000aacdb40011, likely server has closed socket
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doIO(ClientCnxnSocketNIO.java:77)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:350)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:16.524 [Dubbo-framework-shared-scheduler-thread-2] [] INFO  o.a.d.r.c.AbstractServiceDiscovery -  [DUBBO] Metadata of instance changed, updating instance with revision 0., dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:16.630 [main-EventThread] [] INFO  o.a.c.f.state.ConnectionStateManager - State change: SUSPENDED
+15:37:16.630 [main-EventThread] [] INFO  o.a.c.f.state.ConnectionStateManager - State change: SUSPENDED
+15:37:16.639 [Curator-ConnectionStateManager-0] [] WARN  o.a.d.r.z.c.Curator5ZookeeperClient -  [DUBBO] Curator zookeeper connection of session 10000aacdb40005 timed out. connection timeout value is 30000, session expire timeout value is 60000, dubbo version: 3.2.14, current host: 192.168.31.85, error code: 1-35. This may be caused by , go to https://dubbo.apache.org/faq/1/35 to find instructions. 
+15:37:17.723 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:17.723 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:17.724 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:17.826 [SpringApplicationShutdownHook] [] ERROR o.a.d.c.deploy.DefaultModuleDeployer -  [DUBBO] Exceptions occurred when unregister services., dubbo version: 3.2.14, current host: 192.168.31.85, error code: 99-0. This may be caused by , go to https://dubbo.apache.org/faq/99/0 to find instructions. 
+java.lang.IllegalStateException: Failed to unregister dubbo://192.168.31.85:20887/com.qoder.payment.facade.tcc.TccParticipantFacade?application=payment-channel&deprecated=false&dubbo=2.0.2&dynamic=true&generic=false&group=channel&interface=com.qoder.payment.facade.tcc.TccParticipantFacade&ipv6=2409:8a28:4a0:4c1:0:0:0:140&methods=cancel,confirm,tryAction&prefer.serialization=fastjson2,hessian2&release=3.2.14&retries=0&revision=1.0.0&service-name-mapping=true&side=provider&timeout=5000&timestamp=1794810322256 to registry 127.0.0.1:2181, cause: Failed to unregister dubbo://192.168.31.85:20887/com.qoder.payment.facade.tcc.TccParticipantFacade?application=payment-channel&deprecated=false&dubbo=2.0.2&dynamic=true&generic=false&group=channel&interface=com.qoder.payment.facade.tcc.TccParticipantFacade&ipv6=2409:8a28:4a0:4c1:0:0:0:140&methods=cancel,confirm,tryAction&prefer.serialization=fastjson2,hessian2&release=3.2.14&retries=0&revision=1.0.0&service-name-mapping=true&side=provider&timeout=5000&timestamp=1794810322256 to zookeeper zookeeper://127.0.0.1:2181/org.apache.dubbo.registry.RegistryService?REGISTRY_CLUSTER=default&application=payment-channel&dubbo=2.0.2&executor-management-mode=isolation&file-cache=true&interface=org.apache.dubbo.registry.RegistryService&pid=39351&qos.enable=false&register=false&release=3.2.14, cause: KeeperErrorCode = ConnectionLoss for /dubbo/com.qoder.payment.facade.tcc.TccParticipantFacade/providers/dubbo%3A%2F%2F192.168.31.85%3A20887%2Fcom.qoder.payment.facade.tcc.TccParticipantFacade%3Fapplication%3Dpayment-channel%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26generic%3Dfalse%26group%3Dchannel%26interface%3Dcom.qoder.payment.facade.tcc.TccParticipantFacade%26ipv6%3D2409%3A8a28%3A4a0%3A4c1%3A0%3A0%3A0%3A140%26methods%3Dcancel%2Cconfirm%2CtryAction%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.14%26retries%3D0%26revision%3D1.0.0%26service-name-mapping%3Dtrue%26side%3Dprovider%26timeout%3D5000%26timestamp%3D1794810322256
+	at org.apache.dubbo.registry.support.FailbackRegistry.unregister(FailbackRegistry.java:299)
+	at org.apache.dubbo.registry.ListenerRegistryWrapper.unregister(ListenerRegistryWrapper.java:74)
+	at org.apache.dubbo.config.deploy.DefaultModuleDeployer.doOffline(DefaultModuleDeployer.java:286)
+	at org.apache.dubbo.config.deploy.DefaultModuleDeployer.offline(DefaultModuleDeployer.java:269)
+	at org.apache.dubbo.config.deploy.DefaultModuleDeployer.preDestroy(DefaultModuleDeployer.java:258)
+	at org.apache.dubbo.rpc.model.ModuleModel.onDestroy(ModuleModel.java:106)
+	at org.apache.dubbo.rpc.model.ScopeModel.destroy(ScopeModel.java:122)
+	at org.apache.dubbo.config.spring.context.DubboDeployApplicationListener.onContextClosedEvent(DubboDeployApplicationListener.java:189)
+	at org.apache.dubbo.config.spring.context.DubboDeployApplicationListener.onApplicationEvent(DubboDeployApplicationListener.java:145)
+	at org.apache.dubbo.config.spring.context.DubboDeployApplicationListener.onApplicationEvent(DubboDeployApplicationListener.java:52)
+	at org.springframework.context.event.SimpleApplicationEventMulticaster.doInvokeListener(SimpleApplicationEventMulticaster.java:185)
+	at org.springframework.context.event.SimpleApplicationEventMulticaster.invokeListener(SimpleApplicationEventMulticaster.java:178)
+	at org.springframework.context.event.SimpleApplicationEventMulticaster.multicastEvent(SimpleApplicationEventMulticaster.java:156)
+	at org.springframework.context.support.AbstractApplicationContext.publishEvent(AbstractApplicationContext.java:451)
+	at org.springframework.context.support.AbstractApplicationContext.publishEvent(AbstractApplicationContext.java:384)
+	at org.springframework.context.support.AbstractApplicationContext.doClose(AbstractApplicationContext.java:1130)
+	at org.springframework.context.support.AbstractApplicationContext.close(AbstractApplicationContext.java:1093)
+	at org.springframework.boot.SpringApplicationShutdownHook.closeAndWait(SpringApplicationShutdownHook.java:145)
+	at java.base/java.lang.Iterable.forEach(Iterable.java:75)
+	at org.springframework.boot.SpringApplicationShutdownHook.run(SpringApplicationShutdownHook.java:114)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+Caused by: org.apache.dubbo.rpc.RpcException: Failed to unregister dubbo://192.168.31.85:20887/com.qoder.payment.facade.tcc.TccParticipantFacade?application=payment-channel&deprecated=false&dubbo=2.0.2&dynamic=true&generic=false&group=channel&interface=com.qoder.payment.facade.tcc.TccParticipantFacade&ipv6=2409:8a28:4a0:4c1:0:0:0:140&methods=cancel,confirm,tryAction&prefer.serialization=fastjson2,hessian2&release=3.2.14&retries=0&revision=1.0.0&service-name-mapping=true&side=provider&timeout=5000&timestamp=1794810322256 to zookeeper zookeeper://127.0.0.1:2181/org.apache.dubbo.registry.RegistryService?REGISTRY_CLUSTER=default&application=payment-channel&dubbo=2.0.2&executor-management-mode=isolation&file-cache=true&interface=org.apache.dubbo.registry.RegistryService&pid=39351&qos.enable=false&register=false&release=3.2.14, cause: KeeperErrorCode = ConnectionLoss for /dubbo/com.qoder.payment.facade.tcc.TccParticipantFacade/providers/dubbo%3A%2F%2F192.168.31.85%3A20887%2Fcom.qoder.payment.facade.tcc.TccParticipantFacade%3Fapplication%3Dpayment-channel%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26generic%3Dfalse%26group%3Dchannel%26interface%3Dcom.qoder.payment.facade.tcc.TccParticipantFacade%26ipv6%3D2409%3A8a28%3A4a0%3A4c1%3A0%3A0%3A0%3A140%26methods%3Dcancel%2Cconfirm%2CtryAction%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.14%26retries%3D0%26revision%3D1.0.0%26service-name-mapping%3Dtrue%26side%3Dprovider%26timeout%3D5000%26timestamp%3D1794810322256
+	at org.apache.dubbo.registry.zookeeper.ZookeeperRegistry.doUnregister(ZookeeperRegistry.java:189)
+	at org.apache.dubbo.registry.support.FailbackRegistry.unregister(FailbackRegistry.java:284)
+	... 20 common frames omitted
+Caused by: java.lang.IllegalStateException: KeeperErrorCode = ConnectionLoss for /dubbo/com.qoder.payment.facade.tcc.TccParticipantFacade/providers/dubbo%3A%2F%2F192.168.31.85%3A20887%2Fcom.qoder.payment.facade.tcc.TccParticipantFacade%3Fapplication%3Dpayment-channel%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26generic%3Dfalse%26group%3Dchannel%26interface%3Dcom.qoder.payment.facade.tcc.TccParticipantFacade%26ipv6%3D2409%3A8a28%3A4a0%3A4c1%3A0%3A0%3A0%3A140%26methods%3Dcancel%2Cconfirm%2CtryAction%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.14%26retries%3D0%26revision%3D1.0.0%26service-name-mapping%3Dtrue%26side%3Dprovider%26timeout%3D5000%26timestamp%3D1794810322256
+	at org.apache.dubbo.remoting.zookeeper.curator5.Curator5ZookeeperClient.deletePath(Curator5ZookeeperClient.java:284)
+	at org.apache.dubbo.remoting.zookeeper.AbstractZookeeperClient.delete(AbstractZookeeperClient.java:72)
+	at org.apache.dubbo.registry.zookeeper.ZookeeperRegistry.doUnregister(ZookeeperRegistry.java:186)
+	... 21 common frames omitted
+Caused by: org.apache.zookeeper.KeeperException$ConnectionLossException: KeeperErrorCode = ConnectionLoss for /dubbo/com.qoder.payment.facade.tcc.TccParticipantFacade/providers/dubbo%3A%2F%2F192.168.31.85%3A20887%2Fcom.qoder.payment.facade.tcc.TccParticipantFacade%3Fapplication%3Dpayment-channel%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26generic%3Dfalse%26group%3Dchannel%26interface%3Dcom.qoder.payment.facade.tcc.TccParticipantFacade%26ipv6%3D2409%3A8a28%3A4a0%3A4c1%3A0%3A0%3A0%3A140%26methods%3Dcancel%2Cconfirm%2CtryAction%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.14%26retries%3D0%26revision%3D1.0.0%26service-name-mapping%3Dtrue%26side%3Dprovider%26timeout%3D5000%26timestamp%3D1794810322256
+	at org.apache.zookeeper.KeeperException.create(KeeperException.java:102)
+	at org.apache.zookeeper.KeeperException.create(KeeperException.java:54)
+	at org.apache.zookeeper.ZooKeeper.delete(ZooKeeper.java:1614)
+	at org.apache.curator.framework.imps.DeleteBuilderImpl$5.call(DeleteBuilderImpl.java:274)
+	at org.apache.curator.framework.imps.DeleteBuilderImpl$5.call(DeleteBuilderImpl.java:268)
+	at org.apache.curator.RetryLoop.callWithRetry(RetryLoop.java:93)
+	at org.apache.curator.framework.imps.DeleteBuilderImpl.pathInForeground(DeleteBuilderImpl.java:265)
+	at org.apache.curator.framework.imps.DeleteBuilderImpl.forPath(DeleteBuilderImpl.java:249)
+	at org.apache.curator.framework.imps.DeleteBuilderImpl.forPath(DeleteBuilderImpl.java:34)
+	at org.apache.dubbo.remoting.zookeeper.curator5.Curator5ZookeeperClient.deletePath(Curator5ZookeeperClient.java:281)
+	... 23 common frames omitted
+15:37:17.828 [SpringApplicationShutdownHook] [] INFO  o.a.d.r.zookeeper.ZookeeperRegistry -  [DUBBO] Unregister: dubbo://192.168.31.85:20887/com.qoder.payment.facade.tcc.TccParticipantFacade?application=payment-channel&deprecated=false&dubbo=2.0.2&dynamic=true&generic=false&group=channel&interface=com.qoder.payment.facade.tcc.TccParticipantFacade&ipv6=2409:8a28:4a0:4c1:0:0:0:140&methods=cancel,confirm,tryAction&prefer.serialization=fastjson2,hessian2&release=3.2.14&retries=0&revision=1.0.0&service-name-mapping=true&side=provider&timeout=5000&timestamp=1794810322256, dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:18.632 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:18.632 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:18.632 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:19.061 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:19.061 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:19.061 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:20.247 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:20.248 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:20.248 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:20.373 [NettyServerWorker-3-4] [] INFO  o.a.d.r.t.netty4.NettyServerHandler -  [DUBBO] The connection of /[2409:8a28:4a0:4c1:0:0:0:140]:49939 -> /[2409:8a28:4a0:4c1:0:0:0:140]:20887 is established., dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:20.410 [NettyServerWorker-3-5] [] INFO  o.a.d.r.t.netty4.NettyServerHandler -  [DUBBO] The connection of /[2409:8a28:4a0:4c1:0:0:0:140]:49941 -> /[2409:8a28:4a0:4c1:0:0:0:140]:20887 is established., dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:20.974 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:20.974 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:20.974 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:21.568 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:21.568 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:21.569 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:21.673 [Dubbo-framework-shared-scheduler-thread-2] [] WARN  o.a.c.retry.ExponentialBackoffRetry - Sleep extension too large (600). Pinning to 500
+15:37:22.464 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:22.464 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:22.465 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:22.840 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:22.841 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:22.841 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:24.354 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:24.354 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:24.354 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:24.416 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:24.416 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:24.417 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:24.520 [Dubbo-framework-shared-scheduler-thread-2] [] WARN  o.a.c.retry.ExponentialBackoffRetry - Sleep extension too large (1150). Pinning to 500
+15:37:25.235 [NettyServerWorker-3-5] [] INFO  o.a.d.r.t.netty4.NettyServerHandler -  [DUBBO] The connection of /[2409:8a28:4a0:4c1:0:0:0:140]:49941 -> /[2409:8a28:4a0:4c1:0:0:0:140]:20887 is disconnected., dubbo version: 3.2.14, current host: 192.168.31.85
+15:37:25.999 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:25.999 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:26.000 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:26.103 [Dubbo-framework-shared-scheduler-thread-2] [] WARN  o.a.c.retry.ExponentialBackoffRetry - Sleep extension too large (1200). Pinning to 500
+15:37:26.392 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:26.392 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:26.393 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:27.267 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:27.267 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:27.267 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:27.371 [Dubbo-framework-shared-scheduler-thread-2] [] WARN  o.a.c.retry.ExponentialBackoffRetry - Sleep extension too large (7500). Pinning to 500
+15:37:27.727 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:27.727 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:27.728 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:28.811 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:28.811 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:28.812 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:28.916 [Dubbo-framework-shared-scheduler-thread-2] [] WARN  o.a.c.retry.ExponentialBackoffRetry - Sleep extension too large (7250). Pinning to 500
+15:37:29.632 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:29.632 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:29.632 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:29.960 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:29.961 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:29.961 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40011 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)
+15:37:30.066 [Dubbo-framework-shared-scheduler-thread-2] [] WARN  o.a.c.retry.ExponentialBackoffRetry - Sleep extension too large (31100). Pinning to 500
+15:37:30.899 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - Opening socket connection to server localhost/127.0.0.1:2181.
+15:37:30.899 [main-SendThread(127.0.0.1:2181)] [] INFO  org.apache.zookeeper.ClientCnxn - SASL config status: Will not attempt to authenticate using SASL (unknown error)
+15:37:30.900 [main-SendThread(127.0.0.1:2181)] [] WARN  org.apache.zookeeper.ClientCnxn - Session 0x10000aacdb40005 for server localhost/127.0.0.1:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:344)
+	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1289)

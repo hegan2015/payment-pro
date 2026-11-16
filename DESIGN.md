@@ -2,7 +2,8 @@
 
 > 参考支付宝领域划分的工业级支付系统
 > Spring Boot 3.2 + Apache Dubbo 3.2 + 自研 XTS 风格 TCC + 事务性 Outbox
-> 版本：1.0.0 ｜ 文档日期：2026-11-16
+> 版本：1.1.0 ｜ 文档日期：2026-11-16
+> v1.1 细化：新增附录 C 字段级数据字典、附录 D 接口契约清单、附录 E 核心代码走读、附录 F 异常与边界场景全集
 
 ---
 
@@ -23,6 +24,13 @@
 13. [可观测性与运维](#13-可观测性与运维)
 14. [测试与验证体系](#14-测试与验证体系)
 15. [已知边界与演进方向](#15-已知边界与演进方向)
+
+**深度附录（v1.1 细化）**
+
+- [附录 C：数据字典（字段级 DDL）](#附录-c数据字典字段级-ddl)
+- [附录 D：接口契约清单](#附录-d接口契约清单)
+- [附录 E：核心代码走读](#附录-e核心代码走读)
+- [附录 F：异常与边界场景全集](#附录-f异常与边界场景全集)
 
 ---
 
@@ -267,10 +275,12 @@ idempotent_record  -- PK (biz_type, biz_no)：业务幂等占位 + 结果 JSON �
 ### 5.4 账务库表（accounting）
 
 ```sql
-balance            -- account_id PK、balance（贷-借累计）、frozen、version
-entry              -- 分录：seq 序列、biz_no、account_id、dir(D/C)、amount、balance_after
-transfer           -- 转账凭证：biz_no UNIQUE（过账幂等兜底）、lines JSON、reversed 标记
+account_balance    -- account_id PK、balance（贷-借累计）、frozen、version
+ledger_entry       -- 分录：seq 序列、biz_no、account_id、dir(D/C)、amount、balance_after
+transfer_record    -- 转账凭证：biz_no PK（过账幂等兜底）、lines JSON、reversed 标记
 ```
+
+> 字段级完整 DDL 见 [附录 C](#附录-c数据字典字段级-ddl)。
 
 ### 5.5 数据一致性边界
 
@@ -443,7 +453,7 @@ tx.execute(s -> {
 
 ```sql
 -- 订单预留：只有一个支付请求能把 CREATED 改成 PAYING
-UPDATE orders SET status='PAYING', payment_id=? WHERE id=? AND status='CREATED'
+UPDATE trade_order SET status='PAYING', payment_id=? WHERE id=? AND status='CREATED'
 -- 渠道扣款：PREAUTH 只能翻转一次
 UPDATE channel_trade SET status='CAPTURED' WHERE biz_no=? AND status='PREAUTH'
 ```
@@ -867,4 +877,865 @@ cd /Users/hegan/Documents/Qoder/payment-pro
 open http://127.0.0.1:8080/
 python3 smoke-test.py    # 79 项功能断言
 python3 verify-pro.py    # 22 项并发/混沌/持久化断言
+```
+
+---
+
+## 附录 C：数据字典（字段级 DDL）
+
+> 以下 DDL 逐字取自各域 `src/main/resources/schema.sql`，由 Spring SQL init 在启动时幂等执行（`CREATE ... IF NOT EXISTS`）。
+> 通用约定：主键多为 `VARCHAR` 业务 ID（前缀 + 序列）；时间戳统一 `BIGINT` 毫秒；金额统一 `BIGINT` 分；JSON 载荷用 `CLOB`。
+> 标注 legend：🔑 幂等/唯一键 ｜ 🔁 CAS 状态列 ｜ 🧊 冻结/余额权威 ｜ 📮 异步投递驱动列。
+
+### C.1 member 库（payment-member）
+
+```sql
+CREATE SEQUENCE IF NOT EXISTS seq_member START WITH 1;
+CREATE TABLE IF NOT EXISTS member (
+    id         VARCHAR(32) PRIMARY KEY,
+    name       VARCHAR(64) NOT NULL,
+    type       VARCHAR(16) NOT NULL,          -- USER / MERCHANT
+    status     VARCHAR(16) NOT NULL,          -- ACTIVE / FROZEN
+    app_id     VARCHAR(64),                   -- 商户 OpenAPI appId
+    app_secret VARCHAR(64),                   -- 商户 HMAC 密钥（不出查询 DTO）
+    created_at BIGINT      NOT NULL
+);
+```
+
+| 列 | 说明 |
+|---|---|
+| id | "M"+seq_member；会员唯一标识 |
+| name | 注册重名校验在 service 层（重名 409），表本身未加唯一约束 |
+| type | 下单必须 MERCHANT；USER 下单 400 |
+| app_id / app_secret | 仅 MERCHANT 持有；OpenAPI 验签凭据 |
+
+### C.2 account 库（payment-account）
+
+```sql
+CREATE SEQUENCE IF NOT EXISTS seq_account START WITH 1;
+CREATE TABLE IF NOT EXISTS account (
+    id          VARCHAR(32) PRIMARY KEY,
+    member_id   VARCHAR(32) NOT NULL,
+    member_name VARCHAR(64),
+    type        VARCHAR(16) NOT NULL,         -- USER / MERCHANT
+    status      VARCHAR(16) NOT NULL,         -- ACTIVE / FROZEN
+    created_at  BIGINT      NOT NULL,
+    CONSTRAINT uk_account_member UNIQUE (member_id)   -- 🔑 一会员一账户
+);
+```
+
+> 账户域**不存余额**（余额权威在账务域 account_balance）。`AccountDTO.balance` 是聚合查询时从账务域回填的展示字段，非本表列。
+
+### C.3 accounting 库（payment-accounting）——资金权威
+
+```sql
+CREATE SEQUENCE IF NOT EXISTS seq_entry START WITH 1;
+CREATE TABLE IF NOT EXISTS account_balance (
+    account_id VARCHAR(32) PRIMARY KEY,
+    balance    BIGINT NOT NULL DEFAULT 0,     -- 🧊 贷方累计 − 借方累计
+    frozen     BIGINT NOT NULL DEFAULT 0,     -- 🧊 TCC Try 冻结额；可用 = balance − frozen
+    version    INT    NOT NULL DEFAULT 0,
+    updated_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ledger_entry (
+    id            VARCHAR(32) PRIMARY KEY,    -- "E"+seq_entry
+    seq           BIGINT       NOT NULL,      -- 全局分录序号（排序/审计）
+    biz_no        VARCHAR(64)  NOT NULL,      -- 关联转账凭证
+    account_id    VARCHAR(32)  NOT NULL,
+    dir           VARCHAR(1)   NOT NULL,      -- D 借 / C 贷
+    amount        BIGINT       NOT NULL,
+    balance_after BIGINT       NOT NULL,      -- 过账后余额快照
+    subject       VARCHAR(128),
+    ref_id        VARCHAR(64),
+    created_at    BIGINT       NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_entry_account ON ledger_entry (account_id, seq);
+CREATE INDEX IF NOT EXISTS idx_entry_biz ON ledger_entry (biz_no);
+CREATE TABLE IF NOT EXISTS transfer_record (
+    biz_no     VARCHAR(64) PRIMARY KEY,       -- 🔑 过账幂等兜底（同 bizNo 不重复落凭证）
+    lines      CLOB         NOT NULL,         -- 分录行 JSON
+    subject    VARCHAR(128),
+    ref_id     VARCHAR(64),
+    reversed   BOOLEAN      NOT NULL DEFAULT FALSE,  -- 退款反向凭证标记
+    created_at BIGINT       NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tcc_branch_log (
+    xid        VARCHAR(64) NOT NULL,
+    branch_id  VARCHAR(80) NOT NULL,
+    action     VARCHAR(32) NOT NULL,          -- PAY / REFUND
+    status     VARCHAR(16) NOT NULL,          -- 🔁 TRYING / CONFIRMED / CANCELLED
+    context    CLOB,
+    created_at BIGINT      NOT NULL,
+    updated_at BIGINT      NOT NULL,
+    PRIMARY KEY (xid, branch_id, action)      -- 🔑 TCC 幂等/空回滚/防悬挂载体
+);
+CREATE TABLE IF NOT EXISTS idempotent_record (
+    biz_type   VARCHAR(32) NOT NULL,          -- TOPUP
+    biz_no     VARCHAR(64) NOT NULL,
+    result     CLOB,                          -- 占位 NULL → 业务后回填结果 JSON
+    created_at BIGINT      NOT NULL,
+    PRIMARY KEY (biz_type, biz_no)            -- 🔑 通用业务幂等
+);
+```
+
+### C.4 trade 库（payment-trade）
+
+```sql
+CREATE SEQUENCE IF NOT EXISTS seq_order START WITH 1;
+CREATE TABLE IF NOT EXISTS trade_order (
+    id              VARCHAR(32) PRIMARY KEY,  -- "O"+seq_order
+    merchant_id     VARCHAR(32)  NOT NULL,
+    merchant_name   VARCHAR(64),
+    subject         VARCHAR(128) NOT NULL,
+    amount          BIGINT       NOT NULL,
+    status          VARCHAR(16)  NOT NULL,    -- 🔁 CREATED/PAYING/PAID/PARTIAL_REFUNDED/REFUNDED/CLOSED
+    payment_id      VARCHAR(32),              -- 预留时写入；release 按此匹配防误释放
+    refunded_amount BIGINT       NOT NULL DEFAULT 0,
+    created_at      BIGINT       NOT NULL,
+    paid_at         BIGINT,
+    closed_at       BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_order_merchant ON trade_order (merchant_id);
+-- tcc_branch_log / idempotent_record 结构同 C.3（idempotent biz_type=REFUND_MARK）
+```
+
+### C.5 channel 库（payment-channel）
+
+```sql
+CREATE TABLE IF NOT EXISTS channel_trade (
+    biz_no      VARCHAR(64) PRIMARY KEY,      -- 🔑 PAY=paymentId / REFUND=refundId
+    type        VARCHAR(16) NOT NULL,         -- PAY / REFUND
+    orig_biz_no VARCHAR(64),                  -- REFUND 指向原 PAY 交易
+    card_no     VARCHAR(32) NOT NULL,         -- 库内全卡号（出参脱敏）
+    amount      BIGINT      NOT NULL,
+    status      VARCHAR(16) NOT NULL,         -- 🔁 PREAUTH/CAPTURED/REFUNDED/VOIDED
+    reason      VARCHAR(256),
+    created_at  BIGINT      NOT NULL
+);
+-- tcc_branch_log 结构同 C.3（渠道无 idempotent_record，幂等全靠分支日志）
+```
+
+### C.6 payment 库（payment-payment）——编排中枢
+
+```sql
+CREATE SEQUENCE IF NOT EXISTS seq_payment START WITH 1;
+CREATE SEQUENCE IF NOT EXISTS seq_refund START WITH 1;
+CREATE TABLE IF NOT EXISTS payment (
+    id                  VARCHAR(32) PRIMARY KEY,  -- "P"+seq_payment
+    order_id            VARCHAR(32)  NOT NULL,
+    merchant_id         VARCHAR(32)  NOT NULL,
+    method              VARCHAR(16)  NOT NULL,    -- BALANCE / CARD
+    payer_account_id    VARCHAR(32),              -- BALANCE 付款户
+    card_no             VARCHAR(32),              -- CARD 全卡号
+    merchant_account_id VARCHAR(32)  NOT NULL,
+    amount              BIGINT       NOT NULL,
+    fee                 BIGINT       NOT NULL,    -- MoneyUtil.fee(amount, feeBps)
+    status              VARCHAR(16)  NOT NULL,    -- 🔁 PROCESSING/SUCCESS/FAILED/REFUNDED
+    refunded_amount     BIGINT       NOT NULL DEFAULT 0,
+    refunded_fee        BIGINT       NOT NULL DEFAULT 0,
+    channel_biz_no      VARCHAR(64),              -- CARD=paymentId
+    fail_reason         VARCHAR(256),
+    request_id          VARCHAR(64)  NOT NULL,    -- 🔑 入口幂等键
+    xid                 VARCHAR(64),              -- 关联全局事务
+    callback_url        VARCHAR(256),
+    created_at          BIGINT       NOT NULL,
+    CONSTRAINT uk_payment_request UNIQUE (request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_payment_xid ON payment (xid);
+CREATE INDEX IF NOT EXISTS idx_payment_order ON payment (order_id);
+CREATE TABLE IF NOT EXISTS refund_record (
+    id         VARCHAR(32) PRIMARY KEY,       -- "R"+seq_refund
+    payment_id VARCHAR(32) NOT NULL,
+    amount     BIGINT      NOT NULL,
+    fee_refund BIGINT      NOT NULL,          -- 按比例退手续费
+    request_id VARCHAR(64) NOT NULL,          -- 🔑
+    xid        VARCHAR(64),
+    status     VARCHAR(16) NOT NULL,          -- 🔁 PROCESSING/SUCCESS/FAILED
+    biz_no     VARCHAR(64) NOT NULL,          -- =refundId，账务转账号
+    created_at BIGINT      NOT NULL,
+    CONSTRAINT uk_refund_request UNIQUE (request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_refund_xid ON refund_record (xid);
+CREATE TABLE IF NOT EXISTS outbox (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event         VARCHAR(32)  NOT NULL,      -- SETTLE_PAY/SETTLE_REFUND/NOTIFY_PAY/NOTIFY_REFUND
+    biz_id        VARCHAR(64)  NOT NULL,
+    payload       CLOB         NOT NULL,
+    status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',  -- 🔁 📮 PENDING/DELIVERED/DEAD
+    attempts      INT          NOT NULL DEFAULT 0,          -- 📮
+    next_retry_at BIGINT       NOT NULL DEFAULT 0,          -- 📮 退避到期时间
+    last_error    VARCHAR(256),
+    created_at    BIGINT       NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox (status, next_retry_at);
+CREATE TABLE IF NOT EXISTS dtx_transaction (
+    xid           VARCHAR(64) PRIMARY KEY,    -- "T"+UUID
+    biz_type      VARCHAR(32) NOT NULL,       -- PAY / REFUND
+    biz_no        VARCHAR(64) NOT NULL,       -- paymentId / refundId
+    status        VARCHAR(16) NOT NULL,       -- 🔁 TRYING/CONFIRMING/CANCELLING/CONFIRMED/CANCELLED/DEAD
+    fail_reason   VARCHAR(256),
+    retry_count   INT         NOT NULL DEFAULT 0,           -- 📮
+    next_retry_at BIGINT      NOT NULL DEFAULT 0,           -- 📮
+    version       INT         NOT NULL DEFAULT 0,
+    created_at    BIGINT      NOT NULL,
+    updated_at    BIGINT      NOT NULL,
+    CONSTRAINT uk_dtx_biz UNIQUE (biz_type, biz_no)         -- 🔑 一支付单不开两个全局事务
+);
+CREATE TABLE IF NOT EXISTS dtx_branch (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    xid         VARCHAR(64) NOT NULL,
+    branch_id   VARCHAR(80) NOT NULL,         -- xid+"-B"+seq
+    participant VARCHAR(32) NOT NULL,         -- accounting/channel/trade（路由 key）
+    action      VARCHAR(32) NOT NULL,         -- PAY / REFUND
+    status      VARCHAR(16) NOT NULL,         -- 🔁 INIT/TRY_OK/TRY_FAIL/CONFIRMED/CANCELLED
+    context     CLOB,                         -- 分支上下文 JSON（重启可重放）
+    seq         INT         NOT NULL,         -- 注册顺序（Try/Confirm/Cancel 按此序）
+    CONSTRAINT uk_dtx_branch UNIQUE (xid, branch_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dtx_recover ON dtx_transaction (status, next_retry_at);
+```
+
+> `dtx_branch`（协调器侧，含 participant/seq）与 `tcc_branch_log`（参与者侧，含 action 主键）是**两张不同的表**，分别落在协调器库与参与者库，切勿混淆。
+
+### C.7 settle 库（payment-settle）
+
+```sql
+CREATE SEQUENCE IF NOT EXISTS seq_settle START WITH 1;
+CREATE TABLE IF NOT EXISTS settle_record (
+    id          VARCHAR(32) PRIMARY KEY,      -- "S"+seq_settle
+    type        VARCHAR(16) NOT NULL,         -- PAY / REFUND
+    biz_id      VARCHAR(64) NOT NULL,         -- PAY=paymentId / REFUND=refundId
+    payment_id  VARCHAR(32) NOT NULL,
+    order_id    VARCHAR(32),
+    merchant_id VARCHAR(32) NOT NULL,
+    gross       BIGINT      NOT NULL,         -- 总额
+    fee         BIGINT      NOT NULL,         -- 手续费
+    net         BIGINT      NOT NULL,         -- 净额 = gross − fee
+    method      VARCHAR(16),
+    status      VARCHAR(16) NOT NULL,
+    created_at  BIGINT      NOT NULL,
+    CONSTRAINT uk_settle_biz UNIQUE (biz_id, type)          -- 🔑 结算去重兜底
+);
+CREATE INDEX IF NOT EXISTS idx_settle_merchant ON settle_record (merchant_id);
+-- idempotent_record 结构同 C.3（biz_type=SETTLE_PAY / SETTLE_REFUND）
+```
+
+### C.8 notify 库（payment-notify）
+
+```sql
+CREATE SEQUENCE IF NOT EXISTS seq_notify START WITH 1;
+CREATE TABLE IF NOT EXISTS notify_record (
+    id            VARCHAR(32) PRIMARY KEY,    -- "N"+seq_notify
+    event         VARCHAR(32)  NOT NULL,      -- PAY_SUCCESS / REFUND_SUCCESS
+    biz_id        VARCHAR(64)  NOT NULL,
+    payload       CLOB         NOT NULL,
+    callback_url  VARCHAR(256),               -- 空 → PULL 模式
+    status        VARCHAR(16)  NOT NULL,      -- 🔁 📮 PULL/PENDING/DELIVERED/FAILED
+    attempts      BIGINT       NOT NULL DEFAULT 0,          -- 📮
+    next_retry_at BIGINT       NOT NULL DEFAULT 0,          -- 📮
+    last_error    VARCHAR(256),
+    created_at    BIGINT       NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notify_biz ON notify_record (biz_id);
+CREATE INDEX IF NOT EXISTS idx_notify_pending ON notify_record (status, next_retry_at);
+-- idempotent_record 结构同 C.3（biz_type=NOTIFY，biz_no=event:bizId）
+```
+
+### C.9 recon 库（payment-recon）
+
+```sql
+CREATE SEQUENCE IF NOT EXISTS seq_recon START WITH 1;
+CREATE TABLE IF NOT EXISTS recon_report (
+    id         VARCHAR(32) PRIMARY KEY,       -- "RC"+seq_recon
+    checked_at BIGINT  NOT NULL,
+    pass       BOOLEAN NOT NULL,              -- 六项全通过才 true
+    report     CLOB    NOT NULL               -- 逐项核对明细 JSON
+);
+```
+
+### C.10 跨库幂等键全景
+
+| 域 | 表 | 幂等键 | 吸收的重复来源 |
+|---|---|---|---|
+| payment | payment | request_id UNIQUE | 客户端重试/并发同 requestId |
+| payment | refund_record | request_id UNIQUE | 退款重试 |
+| payment | dtx_transaction | (biz_type,biz_no) UNIQUE | 同支付单重复开启全局事务 |
+| accounting/channel/trade | tcc_branch_log | (xid,branch_id,action) PK | 补偿重试/网络重发/重启重放 |
+| accounting | transfer_record | biz_no PK | 过账兜底 |
+| accounting | idempotent_record | (TOPUP,bizNo) | 充值重试 |
+| trade | idempotent_record | (REFUND_MARK,bizNo) | 退款标记重投 |
+| settle | idempotent_record + uk_settle_biz | (SETTLE_PAY,paymentId)/(SETTLE_REFUND,bizId) | outbox 至少一次重投 |
+| notify | idempotent_record | (NOTIFY,event:bizId) | outbox 至少一次重投 |
+
+---
+
+## 附录 D：接口契约清单
+
+> 所有 facade 方法返回 `Result<T>`（`{code,message,data}`）；消费端 `.orThrow()` 把非 00000 转 `BizException`。
+> 错误码：A0400 参数 / A0404 不存在 / A0409 冲突 / B0001 业务拒绝 / B0002 系统 / C0001 下游不可达。
+> 下表「幂等键」列为空表示该方法是只读查询或天然幂等（状态 CAS）。
+
+### D.1 MemberFacade（group=默认）
+
+| 方法 | 入参 | 返回 data | 主要错误 | 幂等键 |
+|---|---|---|---|---|
+| create | MemberCreateRequest{name,type} | MemberDTO | A0400 参数；A0409 重名 | — |
+| list | — | List\<MemberDTO> | — | 只读 |
+| get | memberId | MemberDTO | A0404 | 只读 |
+| getByAppId | appId | MemberDTO | A0404 | 只读（OpenAPI 验签用） |
+| updateStatus | memberId, status | MemberDTO | A0404 | CAS |
+
+`MemberDTO`：id/name/type/status/appId/appSecret/createdAt。
+
+### D.2 AccountFacade
+
+| 方法 | 入参 | 返回 data | 主要错误 | 幂等键 |
+|---|---|---|---|---|
+| create | memberId | AccountDTO | A0404 会员不存在；A0409 已开户 | uk_account_member |
+| list | memberId | List\<AccountDTO> | — | 只读 |
+| get | accountId | AccountDTO（含回填 balance） | A0404 | 只读 |
+| getByMember | memberId | AccountDTO | A0404 | 只读 |
+| updateStatus | accountId, status | AccountDTO | A0404 | CAS |
+| check | List\<accountIds> | Map\<id,AccountStatusDTO{status,type}> | — | 只读（账务过账前批量校验） |
+
+### D.3 AccountingFacade
+
+| 方法 | 入参 | 返回 data | 主要错误 | 幂等键 |
+|---|---|---|---|---|
+| topup | TopupRequest{accountId,amount,bizNo} | Long（充值后余额） | A0400 amount/bizNo；A0404 账户；B0001 冻结 | (TOPUP,bizNo) |
+| balance | accountId | Long | — | 只读 |
+| balances | List\<accountIds> | Map\<id,Long> | — | 只读 |
+| entries | accountId, limit | List\<EntryDTO> | — | 只读（limit≤500） |
+| transfer | bizNo | TransferDTO | A0404 | 只读 |
+| trial | — | TrialDTO{totalDebit,totalCredit,balanced,balanceSum,accounts,entries} | — | 只读 |
+
+`EntryDTO`：id/bizNo/accountId/dir/amount/balanceAfter/subject/refId/createdAt。
+`TransferDTO`：bizNo/lines[TransferLineDTO{accountId,dir,amount}]/subject/refId/reversed/createdAt。
+
+### D.4 TradeFacade
+
+| 方法 | 入参 | 返回 data | 主要错误 | 幂等键 |
+|---|---|---|---|---|
+| createOrder | OrderCreateRequest{merchantId,subject,amount} | OrderDTO | A0400 非商户/subject；B0001 商户冻结 | — |
+| listOrders | — | List\<OrderDTO> | — | 只读 |
+| getOrder | orderId | OrderDTO | A0404 | 只读 |
+| closeOrder | orderId | OrderDTO | A0409 非 CREATED | CAS |
+| refundMark | orderId, amount, bizNo | OrderDTO | A0409 未支付；B0001 超退 | (REFUND_MARK,bizNo) |
+
+`OrderDTO`：id/merchantId/merchantName/subject/amount/status/paymentId/refundedAmount/createdAt/paidAt/closedAt。
+
+### D.5 PaymentFacade
+
+| 方法 | 入参 | 返回 data | 主要错误 | 幂等键 |
+|---|---|---|---|---|
+| pay | PayRequest{orderId,method,accountId,cardNo,requestId,callbackUrl} | PayResultDTO{payment,repeated} | A0400 requestId/method/账户/卡号；A0409 订单状态；B0001 余额不足/冻结/风控/渠道 | request_id |
+| refund | paymentId, RefundRequest{amount,requestId} | RefundResultDTO{payment,refundAmount,refundId} | A0400 amount；A0409 未成功；B0001 超退 | request_id |
+| listPayments | — | List\<PaymentDTO> | — | 只读 |
+| getPayment | paymentId | PaymentDTO | A0404 | 只读（轮询终态用） |
+
+`PaymentDTO`：id/orderId/method/payerAccountId/cardNo(脱敏)/merchantAccountId/amount/fee/status/refundedAmount/refundedFee/channelBizNo/failReason/requestId/xid/createdAt。
+> pay/refund 成功返回时支付单多为 PROCESSING（二阶段异步），客户端轮询 getPayment 至 SUCCESS/FAILED。`repeated=true` 表示幂等回放。
+
+### D.6 CashierFacade
+
+| 方法 | 入参 | 返回 data | 说明 |
+|---|---|---|---|
+| cashier | orderId | CashierDTO{order,methods[PayMethodDTO{method,name,hint,accounts}]} | 聚合订单+可用支付方式 |
+| pay | PayRequest | PayResultDTO | 透传支付核心 |
+
+### D.7 ChannelFacade / RiskFacade
+
+| 方法 | 入参 | 返回 data | 说明 |
+|---|---|---|---|
+| ChannelFacade.listTrades | — | List\<ChannelTradeDTO> | 只读；渠道写操作仅经 TCC 参与者接口 |
+| RiskFacade.check | RiskCheckRequest{payerId,merchantId,amount,method} | RiskResultDTO{pass,reason} | 限额+限频；拒绝 pass=false |
+
+`ChannelTradeDTO`：bizNo/type/origBizNo/cardNo/amount/status/reason/createdAt。
+
+### D.8 SettleFacade / NotifyFacade / ReconFacade
+
+| 方法 | 入参 | 返回 data | 幂等键 |
+|---|---|---|---|
+| SettleFacade.recordPay | SettlePayRequest{paymentId,orderId,merchantId,amount,fee,method} | SettleRecordDTO | (SETTLE_PAY,paymentId) |
+| SettleFacade.recordRefund | SettleRefundRequest{bizId,paymentId,amount,feeRefund} | SettleRecordDTO | (SETTLE_REFUND,bizId) |
+| SettleFacade.records | merchantId | List\<SettleRecordDTO> | 只读 |
+| SettleFacade.summary | — | SettleSummaryDTO{payCount,totalGross,totalFee,totalNet,totalRefund} | 只读 |
+| NotifyFacade.send | NotifyRequest{event,bizId,payload,callbackUrl} | NotifyRecordDTO | (NOTIFY,event:bizId) |
+| NotifyFacade.records | bizId | List\<NotifyRecordDTO> | 只读 |
+| NotifyFacade.get | notifyId | NotifyRecordDTO | 只读 |
+| ReconFacade.run | — | ReconReportDTO{id,checkedAt,pass,checks[ReconCheckDTO{name,pass,detail}]} | 每次新报告 |
+| ReconFacade.latest | — | ReconReportDTO | 只读 |
+
+### D.9 TccParticipantFacade（group=accounting/channel/trade）
+
+| 方法 | 入参 | 返回 | 语义 |
+|---|---|---|---|
+| tryAction | TccBranchRequest{xid,branchId,action,context} | Result\<Void> | 一阶段预留；失败协调器全局 Cancel |
+| confirm | 同上 | Result\<Void> | 二阶段提交；幂等可重试 |
+| cancel | 同上 | Result\<Void> | 二阶段回滚；处理空回滚/防悬挂 |
+
+> 同一接口按 Dubbo group 区分三套实现，协调器 `TccParticipants.asMap()` 按 participant 名路由。context 为业务 JSON：accounting→AccountingTccContext、channel→ChannelTccContext、trade→TradeTccContext。
+
+### D.10 HealthFacade（group=${spring.application.name}）
+
+| 方法 | 返回 | 说明 |
+|---|---|---|
+| ping | Result\<String> | 逐域探活；网关按 group 精确引用聚合 13/13 |
+
+---
+
+## 附录 E：核心代码走读
+
+> 代码片段逐字摘自源码（略去日志/import），行号为真实位置。路径相对仓库根 `payment-pro/`。
+> 阅读顺序建议：E.1→E.4 协调器，E.5→E.7 参与者与幂等模板，E.8→E.10 支付编排与 outbox，E.11→E.12 账务与装配。
+
+### E.1 开启全局事务与注册分支 — `payment-dtx/.../TccCoordinator.java:45`
+
+```java
+public String begin(String bizType, String bizNo) {
+    String xid = "T" + UUID.randomUUID().toString().replace("-", "");
+    try {
+        jdbc.update("INSERT INTO dtx_transaction(...,status,...) VALUES(?,?,?,?,...)",
+                xid, bizType, bizNo, GlobalStatus.TRYING.name(), ...);
+    } catch (DuplicateKeyException e) {                       // :52
+        throw new BizException(ResultCode.CONFLICT, "分布式事务已存在: " + bizType + "/" + bizNo);
+    }
+    return xid;
+}
+public String registerBranch(String xid, String participant, String action, Object context) {  // :58
+    Integer seq = jdbc.queryForObject("SELECT COALESCE(MAX(seq),0)+1 FROM dtx_branch WHERE xid=?", ...);
+    String branchId = xid + "-B" + seq;
+    jdbc.update("INSERT INTO dtx_branch(...,status,context,seq) VALUES(?,?,?,?,?,?,?)",
+            xid, branchId, participant, action, BranchStatus.INIT.name(), TccContextUtil.toJson(context), seq);
+    return branchId;
+}
+```
+
+**为什么这样写**：
+- `begin` 用 `(biz_type,biz_no)` 唯一约束做兜底——即使上层幂等失效，同一支付单也开不出第二个全局事务（A0409）。
+- 分支 `context` 序列化成 JSON **落库**而非放内存：协调器重启后 `recover()` 能从库里读出原样上下文重放二阶段，这是崩溃恢复的前提。
+- `seq` 决定 Try/Confirm/Cancel 的执行顺序，注册顺序即驱动顺序。
+
+### E.2 一阶段同步 Try — `TccCoordinator.java:67`
+
+```java
+public void tryAll(String xid) {
+    String failReason = null;
+    for (BranchRow b : branches(xid)) {                       // 按 seq 序
+        try {
+            participant(b).tryAction(request(b)).orThrow();
+            updateBranch(b, BranchStatus.TRY_OK);
+        } catch (Exception e) {
+            updateBranch(b, BranchStatus.TRY_FAIL);
+            failReason = e.getMessage();
+            break;                                            // :77 首个失败即停
+        }
+    }
+    if (failReason != null) {
+        jdbc.update("UPDATE dtx_transaction SET status='CANCELLING', fail_reason=? ...", ...);
+        driveCancel(xid);                                     // :83 立即同步回滚
+        throw new BizException(ResultCode.BIZ_ERROR, failReason);  // :84 抛给调用方
+    }
+}
+```
+
+**为什么这样写**：Try 必须同步——余额不足/渠道拒绝要立刻给用户明确错误。任一失败立即 `driveCancel` 把已预留资源释放（未 Try 的分支走空回滚），再抛业务异常。失败分支之后的分支不再 Try（break），减少无谓预留。
+
+### E.3 二阶段驱动与事务性终态 — `TccCoordinator.java:140`
+
+```java
+private void driveConfirm(String xid) {
+    for (BranchRow b : branches(xid)) {
+        if (b.status() == BranchStatus.CONFIRMED) continue;   // :142 分支级断点续传
+        if (b.status() != BranchStatus.TRY_OK)                // :145 未就绪不允许提交
+            throw new BizException(ResultCode.BIZ_ERROR, "提交阶段存在未就绪分支: ...");
+        try {
+            participant(b).confirm(request(b)).orThrow();
+            updateBranch(b, BranchStatus.CONFIRMED);
+        } catch (Exception e) {
+            return;                                          // :153 失败留给补偿，不抛
+        }
+    }
+    tx.executeWithoutResult(s -> {                            // :156 ★ 同一本地事务
+        updateGlobal(xid, GlobalStatus.CONFIRMED);            //   全局终态
+        if (listener != null) listener.onConfirmed(xid);      //   支付单翻转 + outbox 写入
+    });
+}
+```
+
+**为什么这样写**：这是事务性 outbox 的根基。全局终态、支付单 SUCCESS、outbox 两条消息在**一个本地事务**里提交——不存在"事务已提交但消息丢了"或"消息发了但状态没落"的中间态。Confirm 失败 `return` 而非抛异常，让 `bumpRetryIfPending` 登记退避，由 `recover()` 续驱；已 CONFIRMED 分支跳过实现断点续传。`driveCancel`（:165）对称，回调 `onCancelled` 落 FAILED。
+
+### E.4 补偿恢复与退避耗尽 — `TccCoordinator.java:103` / `:188`
+
+```java
+public void recover() {
+    List<Map<String,Object>> due = jdbc.queryForList(
+        "SELECT xid,status FROM dtx_transaction WHERE status IN ('TRYING','CONFIRMING','CANCELLING') AND next_retry_at <= ?", now);
+    for (var row : due) {
+        switch (status) {
+            case CONFIRMING -> driveConfirm(xid);
+            case CANCELLING -> driveCancel(xid);
+            case TRYING -> {                                 // :114 一阶段崩溃决策
+                boolean allOk = !bs.isEmpty() && bs.stream().allMatch(b -> b.status()==TRY_OK);
+                if (allOk) commitAsync(xid);                 //   全 Try 成功 → 提交
+                else { /* 置 CANCELLING */ driveCancel(xid); } //   否则 → 回滚
+            }
+        }
+        bumpRetryIfPending(xid);
+    }
+}
+private void bumpRetryIfPending(String xid) {                 // :188
+    if (终态) return;
+    int count = retry_count + 1;
+    if (count >= MAX_RETRY) {                                // :200 MAX_RETRY=8
+        jdbc.update("UPDATE dtx_transaction SET status='DEAD' ...");  // 耗尽置 DEAD
+        log.error("TCC 补偿重试耗尽，置 DEAD 待人工介入 xid={} retry={}", ...);
+        return;
+    }
+    long delay = BACKOFF_SECONDS[Math.min(count-1, len-1)] * 1000L;  // {5,10,20,40,80,160,320,640}
+    jdbc.update("UPDATE ... SET retry_count=?, next_retry_at=? ...", count, now+delay);
+}
+```
+
+**为什么这样写**：TRYING 态恢复是协调器一阶段崩溃的兜底——分支日志持久化使得"全 TRY_OK 则提交、否则回滚"可判定。退避累计约 21 分钟，耗尽不无限重试而是显式置 DEAD，把无法自动收敛的事务暴露给对账与人工，避免静默吞掉资金不一致。
+
+### E.5 参与者 Try：幂等/防悬挂/失败清理 — `payment-dtx/.../TccParticipantTemplate.java:39`
+
+```java
+public void tryAction(TccBranchRequest req, Runnable business) {
+    tx.executeWithoutResult(s -> {                           // REQUIRES_NEW（ctor :36）
+        try {
+            insertLog(req, ParticipantStatus.TRYING);
+        } catch (DuplicateKeyException e) {
+            ParticipantStatus existing = currentStatus(req);
+            if (existing == ParticipantStatus.CANCELLED)      // :45 防悬挂
+                throw new BizException(ResultCode.CONFLICT, "TCC 悬挂拒绝: ...");
+            return;                                          // :49 幂等命中，不重复执行
+        }
+        try {
+            business.run();
+        } catch (RuntimeException e) {
+            jdbc.update("DELETE FROM tcc_branch_log WHERE xid=? AND branch_id=? AND action=?", ...);  // :55
+            throw e;                                         // 未预留资源 = 无日志
+        }
+    });
+}
+```
+
+**为什么这样写**：
+- 主键 `(xid,branch_id,action)` 冲突即幂等命中，直接返回。
+- 冲突且既有 CANCELLED → 防悬挂：被空回滚过的分支，迟到的 Try 不能再预留资源。
+- 业务失败时**同事务删日志**：若保留 TRYING 僵尸日志，后续 Cancel 会误执行解冻/撤销。删除后 Cancel 走空回滚，语义一致。
+- 日志与业务同 REQUIRES_NEW 事务，原子提交。
+
+### E.6 参与者 Confirm/Cancel：空回滚与状态互斥 — `TccParticipantTemplate.java:62` / `:79`
+
+```java
+public void confirm(req, business) {
+    tx.executeWithoutResult(s -> {
+        ParticipantStatus status = currentStatus(req);
+        if (status == null) throw ...("TCC Confirm 无 Try 记录");      // :65 不允许凭空提交
+        if (status == CONFIRMED) return;                              // :68 幂等
+        if (status == CANCELLED) throw ...("已回滚分支不可提交");       // :71 互斥
+        business.run(); updateStatus(req, CONFIRMED);
+    });
+}
+public void cancel(req, business) {
+    tx.executeWithoutResult(s -> {
+        ParticipantStatus status = currentStatus(req);
+        if (status == null) { insertLog(req, CANCELLED); return; }    // :82 ★ 空回滚
+        if (status == CANCELLED) return;                              // :87 幂等
+        if (status == CONFIRMED) throw ...("已提交分支不可回滚");       // :90 互斥
+        business.run(); updateStatus(req, CANCELLED);
+    });
+}
+```
+
+**为什么这样写**：空回滚（Cancel 先于 Try 到达）时查无日志，落 CANCELLED 标记不动业务——这个标记同时成为防悬挂屏障。Confirm/Cancel 的状态互斥保护杜绝"已回滚又提交""已提交又回滚"的资金错乱。
+
+### E.7 通用幂等模板 — `payment-dtx/.../IdempotentTemplate.java:32`
+
+```java
+public <T> T execute(String bizType, String bizNo, Class<T> resultType, Supplier<T> action) {
+    return tx.execute(s -> {
+        try {
+            jdbc.update("INSERT INTO idempotent_record(biz_type,biz_no,result,created_at) VALUES(?,?,NULL,?)", ...);  // 占位
+        } catch (DuplicateKeyException e) {
+            String json = /* SELECT result */;
+            if (json == null) throw new BizException(CONFLICT, "幂等请求处理中: ...");  // :41 首请求仍在处理
+            return TccContextUtil.fromJson(json, resultType);                          // :45 命中既有结果
+        }
+        T result = action.get();                                                       // :47 业务
+        jdbc.update("UPDATE idempotent_record SET result=? WHERE ...", toJson(result)); // :48 回填
+        return result;                                                                 // 同事务提交
+    });
+}
+```
+
+**为什么这样写**：占位（result=NULL）、业务、回填三步同事务。并发重复请求在唯一键上竞争：胜者执行业务并回填，败者要么读到完整结果（结果一致），要么读到 NULL 得到明确"处理中"（A0409），**绝不会重复执行业务**。相比"先查后插"消除了查-插窗口竞态。
+
+### E.8 支付编排流水线 — `payment-payment/.../service/PaymentService.java:64`
+
+```java
+public PayResultDTO pay(PayRequest request) {
+    requireRequestId(request.getRequestId());                 // :65 幂等键必填
+    // method 校验 BALANCE/CARD                                 :67
+    PaymentDO replay = paymentMapper.selectByRequestId(...);  // :70 ★ 回放先于状态检查
+    if (replay != null) return result(replay, true);
+    OrderDTO order = tradeFacade.getOrder(...).orThrow();     // :75 订单 CREATED 校验
+    // BALANCE: 付款户 ACTIVE + 余额足额 / CARD: 卡号必填        :80-93
+    long fee = MoneyUtil.fee(amount, feeBps);                 // :96 默认 60bps
+    try { paymentMapper.insert(payment); }                    // :114 insert-first
+    catch (DuplicateKeyException e) { return result(selectByRequestId(...), true); }  // :116 并发败者读胜者
+    RiskResultDTO riskResult = riskFacade.check(risk).orThrow();  // :127
+    if (!pass) { paymentMapper.finish(id,"FAILED",reason); throw ...; }  // :128 风控拒绝留痕
+    String xid = coordinator.begin("PAY", payment.getId());   // :134
+    paymentMapper.updateXid(payment.getId(), xid);
+    coordinator.registerBranch(xid,"accounting","PAY", accountingContext(...));   // :138
+    if (CARD) coordinator.registerBranch(xid,"channel","PAY", channelContext(...)); // :139
+    coordinator.registerBranch(xid,"trade","PAY", tradeContext(...));             // :142
+    coordinator.tryAll(xid);                                  // :143 同步 Try
+    coordinator.commitAsync(xid);                             // :144 异步二阶段
+    return result(require(payment.getId()), false);           // :145 立即返回 PROCESSING
+}
+```
+
+**为什么这样写**：
+- 幂等预检（:70）先于订单状态检查——订单已 PAID 后同 requestId 回放仍返回原始结果而非 409（实测修复过的缺陷）。
+- insert-first（:114）+ DuplicateKey 回读（:116）：并发同 requestId 在唯一键竞争，败者读胜者结果。
+- 分支注册顺序 accounting→channel→trade：最可能失败的资金约束前置，Try 失败回滚成本最小。
+- 风控拒绝先把支付单落 FAILED 留痕再抛错，便于审计与对账。
+
+退款手续费按比例退（`PaymentService.java:165`）：
+
+```java
+long feeRefund = amount == remaining
+        ? payment.getFee() - payment.getRefundedFee()                       // 最后一笔退剩余全部手续费
+        : (payment.getFee() * amount + payment.getAmount() / 2) / payment.getAmount();  // 四舍五入
+```
+
+保证分账精确闭环、无一分钱残留。
+
+### E.9 事务性终态回调 — `payment-payment/.../service/PaymentCompletionListener.java:35`
+
+```java
+public void onConfirmed(String xid) {                         // 在 driveConfirm 的同一事务内被调用
+    PaymentDO payment = paymentMapper.selectByXid(xid);
+    if (payment != null && "PROCESSING".equals(payment.getStatus())) {
+        paymentMapper.finish(payment.getId(), "SUCCESS", null);             // :39 支付单翻转
+        outboxMapper.insert("SETTLE_PAY", payment.getId(), toJson(settle), now);   // :48
+        outboxMapper.insert("NOTIFY_PAY", payment.getId(), toJson(notify(...)), now); // :55
+    }
+    RefundDO refund = refundMapper.selectByXid(xid);
+    if (refund != null && "PROCESSING".equals(refund.getStatus())) {
+        refundMapper.finish(refund.getId(), "SUCCESS");
+        paymentMapper.updateRefunded(pay.getId(), refundedAmount+..., refundedFee+...);  // :62 累计退款
+        outboxMapper.insert("SETTLE_REFUND", ...); outboxMapper.insert("NOTIFY_REFUND", ...);
+    }
+}
+```
+
+**为什么这样写**：`"PROCESSING".equals(status)` 守卫保证回调重放幂等——已是终态则跳过。支付单翻转与 outbox 写入和全局终态同事务（E.3），三者原子。退款额外累计 refunded_amount/refunded_fee，供后续退款比例计算与终态翻转。
+
+### E.10 outbox 可靠投递 — `payment-payment/.../service/OutboxDispatcher.java:38`
+
+```java
+public void dispatchPending() {
+    List<OutboxDO> pending = outboxMapper.selectPending(now, 50);           // 批量 50
+    for (OutboxDO message : pending) {
+        try { deliver(message); outboxMapper.markDelivered(message.getId()); }
+        catch (Exception e) {
+            int attempts = message.getAttempts() + 1;
+            if (attempts >= MAX_ATTEMPTS) {                                 // :47 MAX=8
+                outboxMapper.markDead(message.getId(), error);              // 耗尽 DEAD
+            } else {
+                long delay = BACKOFF_SECONDS[Math.min(attempts-1, len-1)] * 1000L;  // {3,6,12,24,48,96,192,384}
+                outboxMapper.markRetry(message.getId(), attempts, now+delay, error);
+            }
+        }
+    }
+}
+private void deliver(OutboxDO m) {                                          // :59
+    switch (m.getEvent()) {
+        case "SETTLE_PAY" -> settleFacade.recordPay(fromJson(...)).orThrow();
+        case "SETTLE_REFUND" -> settleFacade.recordRefund(fromJson(...)).orThrow();
+        case "NOTIFY_PAY","NOTIFY_REFUND" -> notifyFacade.send(fromJson(...)).orThrow();
+    }
+}
+```
+
+**为什么这样写**：至少一次投递；接收端 settle/notify 用 IdempotentTemplate 去重 → 恰好一次效果。投递失败退避重试，耗尽 DEAD 由对账"支付-清结算一致"项精确报出缺失笔数。双调度 `PaymentScheduler.java:16`（recover 5s）/`:21`（dispatch 3s）均 `fixedDelay`，单实例无重叠。
+
+### E.11 账务复式记账 — `payment-accounting/.../service/AccountingService.java:177`
+
+```java
+public void post(String bizNo, List<TransferLineDTO> lines, ..., boolean reversed) {
+    validateLines(lines);                                     // :178 借贷平衡强校验（D==C）
+    checkAccounts(...);                                       // :179 非系统户 ACTIVE 校验
+    for (TransferLineDTO line : sorted(lines)) {              // :181 ★ 按 accountId 排序加锁 → 无死锁
+        BalanceDO balance = lockOrCreate(line.getAccountId());  // SELECT FOR UPDATE
+        if ("D".equals(line.getDir())) {
+            long available = balance.getBalance() - balance.getFrozen();
+            if (!isSystem(...) && available < amount) throw ...("可用余额不足");  // :187
+            newBalance = balance.getBalance() - amount;
+        } else newBalance = balance.getBalance() + amount;
+        balanceMapper.update(balance);
+        // 落分录 ledger_entry（含 balance_after 快照）          :198-210
+    }
+    try { transferMapper.insert(record); }                  // :219 biz_no PK 幂等兜底
+    catch (DuplicateKeyException e) { log.info("转账记录已存在（幂等）..."); }
+}
+```
+
+TCC 三动作（`freeze:133` / `postAndUnfreeze:153` / `unfreeze:160`）：
+
+```java
+public void freeze(ctx) {            // Try：只冻借方非系统户
+    for (line : sorted(ctx.getLines())) {
+        if (!"D".equals(dir) || isSystem(accountId)) continue;
+        BalanceDO b = lockOrCreate(...);
+        if (b.getBalance()-b.getFrozen() < amount) throw ...("可用余额不足");
+        b.setFrozen(b.getFrozen()+amount); balanceMapper.update(b);
+    }
+}
+public void postAndUnfreeze(ctx) {   // Confirm：★ 先解冻再过账
+    unfreeze(ctx);                   // :155 否则全额退款时冻结额≥余额一半会误报可用不足
+    post(ctx.getBizNo(), ctx.getLines(), ..., reversed);
+}
+public void unfreeze(ctx) {          // Cancel：仅解冻，Math.max(0, frozen-amount) 防御
+    ...
+}
+```
+
+**为什么这样写**：排序加锁保证全局一致加锁顺序→无死锁；`lockOrCreate`（:268）并发开户竞争捕获 DuplicateKey 后加锁重读。Confirm 先解冻再过账的次序是实测修复的关键——过账的可用余额校验若受本笔冻结影响，全额退款会误报不足。系统户（SYS_ 前缀）可透支不冻。
+
+### E.12 参与者装配与路由 — `payment-accounting/.../facade/AccountingTccFacadeImpl.java:15`
+
+```java
+@DubboService(group = "accounting")                           // 同接口按 group 区分实现
+public class AccountingTccFacadeImpl implements TccParticipantFacade {
+    private final TccParticipantTemplate template;            // DtxAutoConfiguration 自动装配
+    private final AccountingService accountingService;
+    public Result<Void> tryAction(TccBranchRequest request) {
+        return FacadeSupport.execute(() -> {
+            AccountingTccContext ctx = fromJson(request.getContext(), AccountingTccContext.class);
+            template.tryAction(request, () -> accountingService.freeze(ctx));   // 模板包裹业务
+            return null;
+        });
+    }
+    // confirm → template.confirm(request, () -> postAndUnfreeze(ctx))
+    // cancel  → template.cancel(request, () -> unfreeze(ctx))
+}
+```
+
+协调器侧路由（`payment-payment/.../config/TccParticipants.java:13`）：
+
+```java
+@DubboReference(group="accounting") private TccParticipantFacade accounting;
+@DubboReference(group="channel")    private TccParticipantFacade channel;
+@DubboReference(group="trade")      private TccParticipantFacade trade;
+public Map<String,TccParticipantFacade> asMap() { return Map.of("accounting",accounting,"channel",channel,"trade",trade); }
+```
+
+**为什么这样写**：参与者只写业务 Runnable，幂等/空回滚/防悬挂全部由模板承担（关注点分离）。`PaymentConfig.java:14` 把 `asMap()` 注入 `TccCoordinator`，协调器按分支日志 participant 名路由——新增参与者只需注册 bean + registerBranch，协调器零改动。trade 参与者按 action 分流（`TradeTccFacadeImpl.java:29`：REFUND→checkRefundable/refundMark，PAY→reserve/markPaid/release）。
+
+---
+
+## 附录 F：异常与边界场景全集
+
+> 每行给出：触发条件 → 系统行为 → 恢复/兜底路径 → 验证手段。
+> 验证标记：[S]=smoke-test.py 功能断言；[A/B/C/D]=verify-pro.py 并发/混沌/持久化场景；[码]=源码机制保证。
+
+### F.1 重复请求类（幂等防线）
+
+| # | 场景 | 触发 | 系统行为 | 兜底 | 验证 |
+|---|---|---|---|---|---|
+| 1 | 同 requestId 串行重放 | 客户端重试 pay | 预检 selectByRequestId 命中 → 返回原结果 repeated=true | request_id UNIQUE | [S] |
+| 2 | 同 requestId 并发 | 8 线程同 requestId | 唯一键竞争，1 胜者执行业务，7 败者 DuplicateKey 回读胜者结果 | insert-first | [A] |
+| 3 | 订单已 PAID 后回放 | 支付成功后同 requestId 再请求 | 预检先于状态检查 → 仍返回原始结果（非 409） | 预检顺序 | [S] |
+| 4 | 同订单不同 requestId 并发 | 8 线程抢同一订单 | 订单 reserve CAS 仅 1 个 CREATED→PAYING 成功，其余 Try 失败 → TCC 整体回滚 FAILED，余额只扣一次 | trade_order CAS | [B] |
+| 5 | 充值重复 bizNo | 同 bizNo 多次 topup | IdempotentTemplate 命中既有结果 | (TOPUP,bizNo) | [S] |
+| 6 | 结算/通知消息重投 | outbox 至少一次 | 接收端 IdempotentTemplate 去重，无副作用 | (SETTLE_*,bizId)/(NOTIFY,event:bizId) | [码] |
+| 7 | 退款标记重投 | REFUND_MARK 重复 | IdempotentTemplate 命中 | (REFUND_MARK,bizNo) | [码] |
+| 8 | 过账兜底重复 | 上游幂等全失效 | transfer_record biz_no PK 冲突 → 记日志跳过 | biz_no PK | [码] |
+
+### F.2 TCC 三大经典问题
+
+| # | 场景 | 触发 | 系统行为 | 兜底 | 验证 |
+|---|---|---|---|---|---|
+| 9 | 分支幂等 | 补偿重试/网络重发 Confirm | tcc_branch_log 主键冲突或 status=CONFIRMED → 直接返回 | (xid,branch_id,action) PK | [C][码] |
+| 10 | 空回滚 | Try 超时/丢失，Cancel 先到 | 查无日志 → 落 CANCELLED 标记，不动业务，返回成功 | cancel:82 | [码] |
+| 11 | 防悬挂 | 被空回滚后迟到 Try | INSERT 冲突且既有 CANCELLED → 抛 CONFLICT 拒绝预留 | tryAction:45 | [码] |
+| 12 | Try 业务失败留痕 | freeze/preauth 抛异常 | 同事务 DELETE 日志 → 后续 Cancel 走空回滚，不误解冻 | tryAction:55 | [S] |
+| 13 | 已回滚分支被 Confirm | 状态错乱 | status=CANCELLED → 抛"已回滚分支不可提交" | confirm:71 | [码] |
+| 14 | 已提交分支被 Cancel | 状态错乱 | status=CONFIRMED → 抛"已提交分支不可回滚" | cancel:90 | [码] |
+| 15 | 凭空 Confirm | 无 Try 记录直接 Confirm | status=null → 抛"无 Try 记录" | confirm:65 | [码] |
+
+### F.3 崩溃与宕机类（持久化恢复）
+
+| # | 场景 | 触发 | 系统行为 | 兜底 | 验证 |
+|---|---|---|---|---|---|
+| 16 | 协调器一阶段崩溃（部分 Try） | Try 执行中宕机 | recover 见 TRYING：非全 TRY_OK → 回滚 | 分支日志持久化 | [D][码] |
+| 17 | 协调器一阶段崩溃（全 Try 成功） | Try 全成功未及 commit | recover 见 TRYING：全 TRY_OK → 提交 | recover:114 | [D][码] |
+| 18 | Confirm 部分成功崩溃 | 部分分支 CONFIRMED | recover 续驱，跳过 CONFIRMED 分支 | driveConfirm:142 | [C] |
+| 19 | 终态事务未提交崩溃 | Confirm 成功但本地事务未落 | 参与者幂等跳过，终态事务重做 | 幂等+本地事务原子 | [码] |
+| 20 | 参与者宕机（渠道进程被杀） | CARD 支付 Confirm RPC 失败 | CONFIRMING 挂起，支付单 PROCESSING；渠道恢复后 recover 续驱收敛 SUCCESS | 退避重试 | [C] |
+| 21 | 全停重启 | stop.sh→run.sh | H2 落盘，schema IF NOT EXISTS 幂等建表，在途事务/outbox 恢复，快照一致 | 文件库持久化 | [D] |
+| 22 | 终态后 outbox 未投递 | 提交后调度前宕机 | outbox 与终态同事务已落库，调度续投绝不丢 | 事务性 outbox | [D][码] |
+
+### F.4 资金与业务边界
+
+| # | 场景 | 触发 | 系统行为 | 兜底 | 验证 |
+|---|---|---|---|---|---|
+| 23 | 余额不足 | 付款户可用 < amount | freeze Try 抛 B0001 → TCC 回滚 → FAILED | 可用余额校验 | [S] |
+| 24 | 渠道拒绝 | 卡号尾号 0000 | preauth Try 抛"渠道拒绝" → 账务 Cancel 解冻、渠道/交易空回滚 → FAILED，订单仍 CREATED 可重付 | Try 失败回滚 | [S] |
+| 25 | 风控超限 | amount > 10 万元 | 支付单落 FAILED 留痕 + 抛 B0001 | 风控前置 | [S] |
+| 26 | 风控限频 | 同 payerId 10s 内 >5 笔 | pass=false → FAILED | 滑动窗口 | [S] |
+| 27 | 账户/商户冻结 | status=FROZEN | 下单/支付/过账三处重复校验拒绝 | 纵深防御 | [S] |
+| 28 | 超退 | refund amount > 可退余额 | 支付核心 + 交易域双重校验抛 B0001 | 累计额校验 | [S] |
+| 29 | 全额退款手续费闭环 | 最后一笔退款 | feeRefund = fee − refundedFee（退剩余全部），无一分残留 | 比例退+末笔兜底 | [S] |
+| 30 | 全额退款可用余额误报 | 冻结额≥余额一半 | Confirm 先解冻再过账，校验不受本笔冻结影响 | postAndUnfreeze 次序 | [S] |
+| 31 | 退款乱序消息 | REFUND 先于 PAY 到 settle | recordRefund 找不到原 PAY → 投递失败进退避，天然等 PAY 先达 | 退避重试 | [码] |
+| 32 | 未扣款退款 | 原渠道交易非 CAPTURED | preauth(REFUND) 校验原交易抛 B0001 | 渠道校验 | [码] |
+| 33 | 并发开户竞争 | 首笔业务懒开户 | lockOrCreate INSERT 竞争捕获 DuplicateKey 后加锁重读 | lockOrCreate:268 | [码] |
+| 34 | 多账户转账死锁 | 并发交叉转账 | 按 accountId 排序加锁，全局一致顺序 → 无死锁 | sorted:292 | [码] |
+
+### F.5 异步投递与通知边界
+
+| # | 场景 | 触发 | 系统行为 | 兜底 | 验证 |
+|---|---|---|---|---|---|
+| 35 | outbox 投递失败 | settle/notify 不可达 | attempts+1 退避 {3,6,12,24,48,96,192,384}s | 退避重试 | [码] |
+| 36 | outbox 重试耗尽 | attempts≥8 | 置 DEAD + error 日志，对账"支付-清结算一致"报缺失笔数 | DEAD+对账 | [码] |
+| 37 | 通知死链 | callbackUrl 不可达 | PENDING 退避 {5,10,20,40,80}s，attempts≥5 → FAILED（记录永久可查，商户可 PULL 补查） | NotifyPusher | [S] |
+| 38 | 无 callbackUrl | 商户未配回调 | 登记即 PULL 模式，不推送 | PULL | [S] |
+| 39 | TCC 补偿耗尽 | retry≥8 | 置 DEAD + error，待人工/对账介入，不无限重试 | bumpRetryIfPending:200 | [码] |
+
+### F.6 接入与安全边界
+
+| # | 场景 | 触发 | 系统行为 | 兜底 | 验证 |
+|---|---|---|---|---|---|
+| 40 | OpenAPI 错签 | sign 不匹配 | TreeMap 排序拼接 HmacSHA256 比对失败 → A0400 | HMAC 验签 | [S] |
+| 41 | OpenAPI 过期时间戳 | 时差 > ±300s | A0400"timestamp 超出 5 分钟有效期"（防重放） | 时间窗 | [S] |
+| 42 | 下游不可达 | Dubbo RpcException | 网关 GlobalExceptionHandler → 503 C0001，不泄漏堆栈 | 异常映射 | [S] |
+| 43 | 非法 JSON / 未知路由 | 请求体损坏/路径不存在 | 400 / 404，统一错误体 | 异常映射 | [S] |
+| 44 | 卡号敏感信息 | 查询支付单 | 出参脱敏 622202****0202，库内全卡号供渠道 | maskCard | [S] |
+
+### F.7 对账故障隔离
+
+| # | 场景 | 触发 | 系统行为 | 兜底 | 验证 |
+|---|---|---|---|---|---|
+| 45 | 某域不可达 | recon 拉取失败 | 逐项故障隔离：仅该项判失败并记原因，不影响其余五项 | detailAction 隔离 | [码] |
+| 46 | 在途单误报 | PROCESSING 支付单 | 不参与核对（只采 SUCCESS），避免补偿收敛前误报 | 采集过滤 | [C] |
+| 47 | 明细与判定不一致 | 计数与明细同源 | failSignal 读 detailAction 计数判 pass，杜绝"明细齐备却判失败" | 同源计数 | [码] |
+
+### F.8 设计不变量（任意时刻成立）
+
+```
+Σ借方 = Σ贷方                       （试算平衡，validateLines 强校验）
+Σ所有账户余额 = 0                    （封闭系统守恒；冻结期间余额未动亦成立）
+SYS_FEE 余额 = Σ结算净手续费          （手续费闭环）
+商户余额增量 = Σ结算净额              （结算闭环）
+同一 requestId → 同一响应            （幂等语义，与当前业务状态无关）
+未预留资源 = 无分支日志              （Try 失败删日志，空回滚安全）
+全局终态 + 支付单翻转 + outbox 原子   （事务性 outbox，无中间态）
 ```
