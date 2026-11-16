@@ -1,0 +1,26 @@
+server:
+  port: ${GATEWAY_PORT:8080}
+
+spring:
+  application:
+    name: payment-gateway
+
+payment:
+  fee-bps: ${FEE_BPS:60}
+
+dubbo:
+  application:
+    name: payment-gateway
+    qos-enable: false
+  registry:
+    address: zookeeper://127.0.0.1:${ZK_PORT:2181}
+  protocol:
+    name: dubbo
+    port: ${GATEWAY_DUBBO_PORT:20880}
+  provider:
+    timeout: 5000
+    retries: 0
+  consumer:
+    check: false
+    timeout: 8000
+    retries: 0

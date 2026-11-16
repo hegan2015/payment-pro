@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.qoder.payment</groupId>
+        <artifactId>payment-pro</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>payment-payment</artifactId>
+    <name>payment-payment</name>
+    <description>支付核心：支付单 + TCC 协调 + 事务性 outbox 可靠投递 + 异步补偿</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.qoder.payment</groupId>
+            <artifactId>payment-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qoder.payment</groupId>
+            <artifactId>payment-facade</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qoder.payment</groupId>
+            <artifactId>payment-dtx</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-dependencies-zookeeper-curator5</artifactId>
+            <type>pom</type>
+        </dependency>
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

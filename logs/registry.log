@@ -1,0 +1,108 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v3.2.5)
+
+2026-11-16T14:25:16.914+08:00  INFO 39342 --- [payment-registry] [           main] c.q.p.registry.RegistryApplication       : Starting RegistryApplication v1.0.0 using Java 18.0.2 with PID 39342 (/Users/hegan/Documents/Qoder/payment-pro/payment-registry/target/payment-registry-1.0.0.jar started by hegan in /Users/hegan/Documents/Qoder/payment-pro)
+2026-11-16T14:25:16.915+08:00  INFO 39342 --- [payment-registry] [           main] c.q.p.registry.RegistryApplication       : No active profile set, falling back to 1 default profile: "default"
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : 
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     :   ______                  _                                          
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     :  |___  /                 | |                                         
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     :     / /    ___     ___   | | __   ___    ___   _ __     ___   _ __   
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     :    / /    / _ \   / _ \  | |/ /  / _ \  / _ \ | '_ \   / _ \ | '__|
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     :   / /__  | (_) | | (_) | |   <  |  __/ |  __/ | |_) | |  __/ | |    
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     :  /_____|  \___/   \___/  |_|\_\  \___|  \___| | .__/   \___| |_|
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     :                                               | |                     
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     :                                               |_|                     
+2026-11-16T14:25:17.075+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : 
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:zookeeper.version=3.8.4-9316c2a7a97e1666d8f4593f34dd6fc36ecc436c, built on 2024-02-12 22:16 UTC
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:host.name=192.168.31.85
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:java.version=18.0.2
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:java.vendor=Amazon.com Inc.
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:java.home=/Users/hegan/Library/Java/JavaVirtualMachines/corretto-18.0.2/Contents/Home
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:java.class.path=payment-registry/target/payment-registry-1.0.0.jar
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:java.library.path=/Users/hegan/Library/Java/Extensions:/Library/Java/Extensions:/Network/Library/Java/Extensions:/System/Library/Java/Extensions:/usr/lib/java:.
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:java.io.tmpdir=/var/folders/zv/y6y36y1s22137y3q6mghcxlw0000gn/T/
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:java.compiler=<NA>
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:os.name=Mac OS X
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:os.arch=aarch64
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:os.version=26.6.2
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:user.name=hegan
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:user.home=/Users/hegan
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:user.dir=/Users/hegan/Documents/Qoder/payment-pro
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:os.memory.free=369MB
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:os.memory.max=6144MB
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Server environment:os.memory.total=392MB
+2026-11-16T14:25:17.097+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : zookeeper.enableEagerACLCheck = false
+2026-11-16T14:25:17.098+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : zookeeper.digest.enabled = true
+2026-11-16T14:25:17.098+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : zookeeper.closeSessionTxn.enabled = true
+2026-11-16T14:25:17.098+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : zookeeper.flushDelay = 0 ms
+2026-11-16T14:25:17.098+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : zookeeper.maxWriteQueuePollTime = 0 ms
+2026-11-16T14:25:17.098+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : zookeeper.maxBatchSize=1000
+2026-11-16T14:25:17.098+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : zookeeper.intBufferStartingSizeBytes = 1024
+2026-11-16T14:25:17.099+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.persistence.FileTxnSnapLog  : zookeeper.snapshot.trust.empty : false
+2026-11-16T14:25:17.104+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.watch.WatchManagerFactory   : Using org.apache.zookeeper.server.watch.WatchManager as watch manager
+2026-11-16T14:25:17.105+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.watch.WatchManagerFactory   : Using org.apache.zookeeper.server.watch.WatchManager as watch manager
+2026-11-16T14:25:17.105+08:00  INFO 39342 --- [payment-registry] [           main] org.apache.zookeeper.server.ZKDatabase   : zookeeper.snapshotSizeFactor = 0.33
+2026-11-16T14:25:17.105+08:00  INFO 39342 --- [payment-registry] [           main] org.apache.zookeeper.server.ZKDatabase   : zookeeper.commitLogCount=500
+2026-11-16T14:25:17.106+08:00  INFO 39342 --- [payment-registry] [           main] o.apache.zookeeper.server.BlueThrottle   : Weighed connection throttling is disabled
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : minSessionTimeout set to 4000 ms
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : maxSessionTimeout set to 40000 ms
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.apache.zookeeper.server.ResponseCache  : getData response cache size is initialized with value 400.
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.apache.zookeeper.server.ResponseCache  : getChildren response cache size is initialized with value 400.
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.s.u.RequestPathMetricsCollector    : zookeeper.pathStats.slotCapacity = 60
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.s.u.RequestPathMetricsCollector    : zookeeper.pathStats.slotDuration = 15
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.s.u.RequestPathMetricsCollector    : zookeeper.pathStats.maxDepth = 6
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.s.u.RequestPathMetricsCollector    : zookeeper.pathStats.initialDelay = 5
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.s.u.RequestPathMetricsCollector    : zookeeper.pathStats.delay = 5
+2026-11-16T14:25:17.107+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.s.u.RequestPathMetricsCollector    : zookeeper.pathStats.enabled = false
+2026-11-16T14:25:17.108+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : The max bytes for all large requests are set to 104857600
+2026-11-16T14:25:17.108+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : The large request threshold is set to -1
+2026-11-16T14:25:17.108+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.AuthenticationHelper        : zookeeper.enforce.auth.enabled = false
+2026-11-16T14:25:17.108+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.AuthenticationHelper        : zookeeper.enforce.auth.schemes = []
+2026-11-16T14:25:17.108+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Created server with tickTime 2000 ms minSessionTimeout 4000 ms maxSessionTimeout 40000 ms clientPortListenBacklog -1 datadir data/zookeeper/version-2 snapdir data/zookeeper/version-2
+2026-11-16T14:25:17.110+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ServerCnxnFactory   : Using org.apache.zookeeper.server.NIOServerCnxnFactory as server connection factory
+2026-11-16T14:25:17.111+08:00  WARN 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ServerCnxnFactory   : maxCnxns is not configured, using default value 0.
+2026-11-16T14:25:17.111+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.NIOServerCnxnFactory        : Configuring NIO connection handler with 10s sessionless connection timeout, 3 selector thread(s), 36 worker threads, and 64 kB direct buffers.
+2026-11-16T14:25:17.118+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.NIOServerCnxnFactory        : binding to port /127.0.0.1:2181
+2026-11-16T14:25:17.121+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.persistence.SnapStream      : zookeeper.snapshot.compression.method = CHECKED
+2026-11-16T14:25:17.122+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.persistence.FileSnap        : Reading snapshot data/zookeeper/version-2/snapshot.41c
+2026-11-16T14:25:17.127+08:00  INFO 39342 --- [payment-registry] [           main] org.apache.zookeeper.server.DataTree     : The digest in the snapshot has digest version of 2, with zxid as 0x41c, and digest value as 702243530252
+2026-11-16T14:25:17.142+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.audit.ZKAuditProvider      : ZooKeeper audit is disabled.
+2026-11-16T14:25:17.146+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.persistence.FileTxnSnapLog  : 240 txns loaded in 12 ms
+2026-11-16T14:25:17.146+08:00  INFO 39342 --- [payment-registry] [           main] org.apache.zookeeper.server.ZKDatabase   : Snapshot loaded in 26 ms, highest zxid is 0x50c, digest is 652984952131
+2026-11-16T14:25:17.147+08:00  INFO 39342 --- [payment-registry] [           main] o.a.z.server.persistence.FileTxnSnapLog  : Snapshotting: 0x50c to data/zookeeper/version-2/snapshot.50c
+2026-11-16T14:25:17.149+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.ZooKeeperServer     : Snapshot taken in 2 ms
+2026-11-16T14:25:17.152+08:00  INFO 39342 --- [payment-registry] [           main] o.a.zookeeper.server.RequestThrottler    : zookeeper.request_throttler.shutdownTimeout = 10000 ms
+2026-11-16T14:25:17.155+08:00  INFO 39342 --- [payment-registry] [:0 cport:2181):] o.a.z.server.PrepRequestProcessor        : PrepRequestProcessor (sid:0) started, reconfigEnabled=false
+2026-11-16T14:25:17.183+08:00  INFO 39342 --- [payment-registry] [           main] c.q.payment.registry.EmbeddedZooKeeper   : 内嵌 ZooKeeper 已启动 port=2181 dataDir=data/zookeeper health=:8092
+2026-11-16T14:25:17.220+08:00  INFO 39342 --- [payment-registry] [           main] c.q.p.registry.RegistryApplication       : Started RegistryApplication in 0.465 seconds (process running for 0.67)
+2026-11-16T14:25:20.312+08:00  INFO 39342 --- [payment-registry] [   SyncThread:0] o.a.z.server.persistence.FileTxnLog      : Creating new log file: log.50d
+2026-11-16T14:25:57.370+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910009, timeout of 40000ms exceeded
+2026-11-16T14:25:57.371+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910012, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910016, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e6791000a, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910006, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e6791000c, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910003, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910014, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910015, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910005, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910001, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e6791000d, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910011, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e6791000b, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e6791000e, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910000, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910010, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e6791000f, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910017, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910008, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910013, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910004, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910002, timeout of 40000ms exceeded
+2026-11-16T14:25:57.372+08:00  INFO 39342 --- [payment-registry] [ SessionTracker] o.a.zookeeper.server.ZooKeeperServer     : Expiring session 0x100004e67910007, timeout of 40000ms exceeded

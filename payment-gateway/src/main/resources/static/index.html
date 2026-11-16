@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>支付系统 · 工业级微服务</title>
+<style>
+  :root { --primary:#2563eb; --primary-dark:#1d4ed8; --bg:#f3f5f9; --card:#fff; --border:#e5e9f0; --text:#1e293b; --muted:#64748b; --green:#16a34a; --red:#dc2626; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif; background:var(--bg); color:var(--text); font-size:14px; }
+  header { background:linear-gradient(120deg,#1e3a8a,#2563eb); color:#fff; padding:18px 28px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between; }
+  header h1 { font-size:20px; font-weight:600; }
+  header .sub { font-size:12px; opacity:.75; margin-left:10px; font-weight:400; }
+  .stats { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { background:rgba(255,255,255,.14); border-radius:8px; padding:5px 12px; font-size:12px; }
+  .chip b { display:block; font-size:15px; margin-top:2px; }
+  nav { display:flex; gap:2px; padding:10px 28px 0; background:var(--card); border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  nav button { border:none; background:none; padding:9px 14px; font-size:13px; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; }
+  nav button.active { color:var(--primary); border-bottom-color:var(--primary); font-weight:600; }
+  main { padding:20px 28px 60px; max-width:1280px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }
+  .card h2 { font-size:15px; margin-bottom:12px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .field { display:flex; flex-direction:column; gap:4px; }
+  .field label { font-size:12px; color:var(--muted); }
+  input,select { border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:14px; min-width:150px; background:#fff; color:var(--text); }
+  input:focus,select:focus { outline:2px solid #bfdbfe; border-color:var(--primary); }
+  button.btn { background:var(--primary); border:none; color:#fff; border-radius:8px; padding:9px 16px; font-size:14px; cursor:pointer; }
+  button.btn:hover { background:var(--primary-dark); }
+  button.btn.ghost { background:#fff; color:var(--primary); border:1px solid var(--primary); }
+  button.btn.danger { background:#fff; color:var(--red); border:1px solid var(--red); }
+  button.btn.small { padding:5px 10px; font-size:12px; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  th { font-size:12px; color:var(--muted); font-weight:500; background:#f8fafc; }
+  tr:last-child td { border-bottom:none; }
+  td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; }
+  .badge.CREATED,.badge.PENDING,.badge.PROCESSING,.badge.PAYING { background:#fef3c7; color:#92400e; }
+  .badge.PAID,.badge.SUCCESS,.badge.SETTLED,.badge.ACTIVE { background:#dcfce7; color:#166534; }
+  .badge.CLOSED,.badge.PULL { background:#e2e8f0; color:#475569; }
+  .badge.PARTIAL_REFUNDED { background:#ffedd5; color:#9a3412; }
+  .badge.REFUNDED { background:#dbeafe; color:#1e40af; }
+  .badge.FAILED,.badge.DEAD,.badge.FROZEN { background:#fee2e2; color:#991b1b; }
+  .badge.kind { background:#ede9fe; color:#5b21b6; }
+  .badge.kind.MERCHANT { background:#cffafe; color:#155e75; }
+  .pos { color:var(--green); } .neg { color:var(--red); }
+  .muted { color:var(--muted); }
+  .empty { color:var(--muted); padding:16px 0; text-align:center; }
+  .table-wrap { overflow-x:auto; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
+  .svc { border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:#f8fafc; }
+  .svc .top { display:flex; align-items:center; gap:8px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#cbd5e1; }
+  .dot.ok { background:var(--green); } .dot.bad { background:var(--red); }
+  .svc b { font-size:14px; }
+  .svc .port { margin-left:auto; font-size:12px; color:var(--muted); }
+  .svc .dom { font-size:12px; color:var(--muted); margin-top:6px; }
+  dialog { border:none; border-radius:14px; padding:22px; width:440px; max-width:92vw; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+  dialog::backdrop { background:rgba(15,23,42,.45); }
+  dialog h3 { font-size:16px; margin-bottom:12px; }
+  .summary { background:#f8fafc; border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:12px; line-height:1.9; font-size:13px; }
+  .dialog-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; }
+  #toast { position:fixed; top:18px; left:50%; transform:translateX(-50%); padding:10px 20px; border-radius:10px; color:#fff; font-size:14px; opacity:0; pointer-events:none; transition:opacity .25s; z-index:99; max-width:80vw; }
+  #toast.show { opacity:1; } #toast.ok { background:var(--green); } #toast.err { background:var(--red); }
+  .hint { font-size:12px; color:var(--muted); margin-top:8px; }
+  .pass-true { color:var(--green); font-weight:600; } .pass-false { color:var(--red); font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>支付系统 · 工业级微服务<span class="sub">参考支付宝领域划分 · Spring Boot + Dubbo + 自研 XTS 风格 TCC</span></h1>
+  <div class="stats" id="stats"></div>
+</header>
+<nav>
+  <button data-tab="arch" class="active">架构</button>
+  <button data-tab="members">会员 / 账户</button>
+  <button data-tab="orders">交易 / 收银台</button>
+  <button data-tab="payments">支付单</button>
+  <button data-tab="settle">清结算</button>
+  <button data-tab="notify">消息通知</button>
+  <button data-tab="recon">对账</button>
+</nav>
+<main>
+  <section id="tab-arch">
+    <div class="card"><h2>服务拓扑（健康检查）</h2><div class="grid" id="svcGrid"></div>
+      <div class="hint">网关统一入口 :8080；各域独立进程、独立 H2 存储，Dubbo RPC 通信（ZooKeeper 注册中心）；支付核心以 XTS 风格 TCC 协调跨域事务，事务性 outbox 可靠投递 + 定时异步补偿，全链路幂等（空回滚 / 防悬挂）。</div></div>
+    <div class="card"><h2>账务试算平衡</h2><div id="trialBox" class="summary"></div></div>
+  </section>
+
+  <section id="tab-members" hidden>
+    <div class="card"><h2>会员列表</h2><div class="table-wrap"><table id="memberTable"></table></div></div>
+    <div class="card"><h2>账户列表（余额来自账务域）</h2><div class="table-wrap"><table id="accountTable"></table></div></div>
+    <div class="card"><h2>注册会员</h2>
+      <div class="row">
+        <div class="field"><label>名称</label><input id="mName" maxlength="50" placeholder="例如：张三 / 某商户"></div>
+        <div class="field"><label>类型</label><select id="mKind"><option value="USER">USER（用户）</option><option value="MERCHANT">MERCHANT（商户）</option></select></div>
+        <button class="btn" id="btnMember">注册</button>
+      </div></div>
+    <div class="card"><h2>充值（外部现金入户）</h2>
+      <div class="row">
+        <div class="field"><label>账户</label><select id="topupAccount"></select></div>
+        <div class="field"><label>金额（元）</label><input id="topupAmount" type="number" min="0.01" step="0.01" placeholder="100.00"></div>
+        <button class="btn" id="btnTopup">充值</button>
+      </div></div>
+  </section>
+
+  <section id="tab-orders" hidden>
+    <div class="card"><h2>创建交易单</h2>
+      <div class="row">
+        <div class="field"><label>收款商户</label><select id="orderMerchant"></select></div>
+        <div class="field"><label>金额（元）</label><input id="orderAmount" type="number" min="0.01" step="0.01" placeholder="29.90"></div>
+        <div class="field"><label>标题</label><input id="orderSubject" maxlength="100" placeholder="例如：机械键盘"></div>
+        <button class="btn" id="btnOrder">下单</button>
+      </div></div>
+    <div class="card"><h2>交易单列表</h2><div class="table-wrap"><table id="orderTable"></table></div></div>
+  </section>
+
+  <section id="tab-payments" hidden>
+    <div class="card"><h2>支付单列表</h2><div class="table-wrap"><table id="paymentTable"></table></div></div>
+    <div class="card"><h2>账户流水（账务域分录）</h2>
+      <div class="row" style="margin-bottom:12px"><div class="field"><label>账户</label><select id="ledgerAccount"></select></div></div>
+      <div class="table-wrap"><table id="ledgerTable"></table></div></div>
+  </section>
+
+  <section id="tab-settle" hidden>
+    <div class="card"><h2>清结算汇总</h2><div id="settleSummary" class="summary"></div></div>
+    <div class="card"><h2>结算单 / 手续费账单</h2><div class="table-wrap"><table id="settleTable"></table></div></div>
+  </section>
+
+  <section id="tab-notify" hidden>
+    <div class="card"><h2>发送测试通知（演示失败重试）</h2>
+      <div class="row">
+        <div class="field"><label>商户回调 URL</label><input id="notifyUrl" style="min-width:280px" placeholder="http://localhost:9/dead（不可达则重试）"></div>
+        <button class="btn" id="btnNotify">发送</button>
+      </div>
+      <div class="hint">无回调 URL 时为 PULL 模式；有回调则异步投递，失败按 5/10/20/40/80 秒退避重试，最多 5 次。</div></div>
+    <div class="card"><h2>通知记录</h2><div class="table-wrap"><table id="notifyTable"></table></div></div>
+  </section>
+
+  <section id="tab-recon" hidden>
+    <div class="card"><h2>对账中心</h2>
+      <div class="row" style="margin-bottom:12px"><button class="btn" id="btnRecon">立即对账</button></div>
+      <div class="table-wrap"><table id="reconTable"></table></div></div>
+  </section>
+</main>
+
+<dialog id="payDialog">
+  <h3>收银台</h3>
+  <div class="summary" id="paySummary"></div>
+  <div class="field" style="margin-bottom:10px"><label>支付方式</label>
+    <select id="payMethod" style="width:100%"><option value="BALANCE">账户余额</option><option value="BANKCARD">银行卡</option></select></div>
+  <div class="field" id="payBalanceField" style="margin-bottom:10px"><label>付款账户</label><select id="payAccount" style="width:100%"></select></div>
+  <div class="field" id="payCardField" style="margin-bottom:10px" hidden><label>银行卡号</label><input id="payCard" style="width:100%" placeholder="6222020202020202"></div>
+  <div class="summary" id="payFeePreview"></div>
+  <div class="dialog-actions"><button class="btn ghost" id="payCancel">取消</button><button class="btn" id="payConfirm">确认支付</button></div>
+</dialog>
+
+<dialog id="refundDialog">
+  <h3>退款</h3>
+  <div class="summary" id="refundSummary"></div>
+  <div class="field"><label>退款金额（元）</label><input id="refundAmount" type="number" min="0.01" step="0.01" style="width:100%"></div>
+  <div class="dialog-actions"><button class="btn ghost" id="refundCancel">取消</button><button class="btn danger" id="refundConfirm">确认退款</button></div>
+</dialog>
+
+<div id="toast"></div>
+<script>
+const $ = s => document.querySelector(s);
+const yuan = f => (f / 100).toFixed(2);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtTime = ts => ts ? new Date(ts).toLocaleString('zh-CN', { hour12:false }) : '—';
+const uuid = () => crypto.randomUUID();
+const OStatus = { CREATED:'待支付', PAYING:'支付中', PAID:'已支付', CLOSED:'已关闭', PARTIAL_REFUNDED:'部分退款', REFUNDED:'已退款' };
+const PStatus = { PROCESSING:'处理中', SUCCESS:'成功', FAILED:'失败', REFUNDED:'已退款' };
+const NStatus = { PULL:'PULL 待拉取', PENDING:'投递中', DELIVERED:'已送达', SUCCESS:'已送达', FAILED:'重试耗尽', DEAD:'重试耗尽' };
+const Kind = { USER:'用户', MERCHANT:'商户' };
+const Dir = { D:'借', C:'贷' };
+
+let members=[], accounts=[], orders=[], payments=[], stats={}, cashierData=null, payingOrder=null, refundingPayment=null;
+
+async function api(path, method='GET', body) {
+  const opt = { method, headers:{ 'Content-Type':'application/json' } };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const res = await fetch('/api' + path, opt);
+  let data = {};
+  try { data = await res.json(); } catch(e) {}
+  if (!res.ok) throw new Error(data.error || ('请求失败 ' + res.status));
+  return data;
+}
+function toast(msg, ok=true) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'show ' + (ok?'ok':'err');
+  clearTimeout(t._t); t._t = setTimeout(()=>t.className='', 2800);
+}
+function toFen(v) {
+  const n = Number(v);
+  if (!isFinite(n) || n <= 0) throw new Error('请输入大于 0 的有效金额');
+  const f = Math.round(n*100);
+  if (f <= 0) throw new Error('金额最小 0.01 元');
+  return f;
+}
+function fill(sel, list, keep) {
+  const old = keep ? sel.value : null;
+  sel.innerHTML = list.map(x=>`<option value="${esc(x.id)}">${esc(x.name||x.memberName)}（${esc(x.id)}）</option>`).join('');
+  if (old && list.some(x=>x.id===old)) sel.value = old;
+}
+
+async function loadStats() {
+  stats = await api('/stats');
+  const s = stats.settle || {};
+  $('#stats').innerHTML = `
+    <div class="chip">会员<b>${stats.members}</b></div>
+    <div class="chip">账户<b>${stats.accounts}</b></div>
+    <div class="chip">交易单<b>${stats.orders}</b></div>
+    <div class="chip">支付总额<b>¥ ${yuan(stats.totalVolume||0)}</b></div>
+    <div class="chip">手续费<b>¥ ${yuan(s.totalFee||0)}</b></div>`;
+}
+async function loadArch() {
+  const health = await api('/health');
+  $('#svcGrid').innerHTML = health.map(h=>`
+    <div class="svc"><div class="top"><span class="dot ${h.ok?'ok':'bad'}"></span><b>${esc(h.service)}</b><span class="port">:${h.port}</span></div>
+    <div class="dom">${esc(h.domain||'')}</div></div>`).join('');
+  const t = stats.trial || {};
+  $('#trialBox').innerHTML = `借方合计 <b>${yuan(t.totalDebit||0)}</b> 元 ／ 贷方合计 <b>${yuan(t.totalCredit||0)}</b> 元 ／
+    分录 ${t.entries||0} 条 ／ 试算平衡：<span class="${t.balanced?'pass-true':'pass-false'}">${t.balanced?'平衡':'不平衡'}</span>`;
+}
+async function loadMembers() {
+  members = await api('/members');
+  accounts = await api('/accounts');
+  const accByMember = {};
+  accounts.forEach(a => accByMember[a.memberId] = a);
+  $('#memberTable').innerHTML = `<tr><th>会员 ID</th><th>名称</th><th>类型</th><th>状态</th><th>appId</th><th>操作</th></tr>` +
+    (members.length ? members.map(m=>`<tr>
+      <td>${esc(m.id)}</td><td>${esc(m.name)}</td>
+      <td><span class="badge kind ${esc(m.type)}">${Kind[m.type]||esc(m.type)}</span></td>
+      <td><span class="badge ${esc(m.status)}">${esc(m.status)}</span></td>
+      <td class="muted">${esc(m.appId||'—')}</td>
+      <td>${accByMember[m.id] ? '<span class="muted">已开户</span>' : `<button class="btn small" data-open="${esc(m.id)}">开户</button>`}</td>
+    </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无会员</td></tr>');
+  $('#accountTable').innerHTML = `<tr><th>账户 ID</th><th>会员</th><th>类型</th><th>状态</th><th class="num">余额（元）</th><th>操作</th></tr>` +
+    (accounts.length ? accounts.map(a=>`<tr>
+      <td>${esc(a.id)}</td><td>${esc(a.memberName)}</td>
+      <td><span class="badge kind ${esc(a.type)}">${Kind[a.type]||esc(a.type)}</span></td>
+      <td><span class="badge ${esc(a.status)}">${esc(a.status)}</span></td>
+      <td class="num"><b>${yuan(a.balance)}</b></td>
+      <td><button class="btn small ${a.status==='ACTIVE'?'danger':'ghost'}" data-freeze="${esc(a.id)}" data-status="${a.status==='ACTIVE'?'FROZEN':'ACTIVE'}">${a.status==='ACTIVE'?'冻结':'解冻'}</button></td>
+    </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无账户</td></tr>');
+  fill($('#topupAccount'), accounts.filter(a=>a.status==='ACTIVE'), true);
+  fill($('#orderMerchant'), members.filter(m=>m.type==='MERCHANT'), true);
+  fill($('#ledgerAccount'), accounts, true);
+}
+async function loadOrders() {
+  orders = await api('/orders');
+  members = await api('/members');
+  fill($('#orderMerchant'), members.filter(m=>m.type==='MERCHANT'), true);
+  $('#orderTable').innerHTML = `<tr><th>交易单号</th><th>标题</th><th>商户</th><th class="num">金额（元）</th><th>状态</th><th class="num">已退款</th><th>创建时间</th><th>操作</th></tr>` +
+    (orders.length ? orders.map(o=>{
+      let act = '';
+      if (o.status==='CREATED') act = `<button class="btn small" data-pay="${esc(o.id)}">支付</button> <button class="btn small danger" data-close="${esc(o.id)}">关闭</button>`;
+      else if (o.status==='PAID'||o.status==='PARTIAL_REFUNDED') act = `<button class="btn small ghost" data-refund="${esc(o.paymentId)}">退款</button>`;
+      return `<tr><td>${esc(o.id)}</td><td>${esc(o.subject)}</td><td>${esc(o.merchantName)}</td>
+        <td class="num">${yuan(o.amount)}</td><td><span class="badge ${esc(o.status)}">${OStatus[o.status]||esc(o.status)}</span></td>
+        <td class="num">${yuan(o.refundedAmount)}</td><td class="muted">${fmtTime(o.createdAt)}</td><td>${act||'<span class="muted">—</span>'}</td></tr>`;
+    }).join('') : '<tr><td colspan="8" class="empty">暂无交易单</td></tr>');
+}
+async function loadPayments() {
+  payments = await api('/payments');
+  accounts = await api('/accounts');
+  fill($('#ledgerAccount'), accounts, true);
+  $('#paymentTable').innerHTML = `<tr><th>支付单号</th><th>交易单</th><th>方式</th><th class="num">金额</th><th class="num">手续费</th><th class="num">已退款</th><th>状态</th><th>失败原因</th><th>操作</th></tr>` +
+    (payments.length ? payments.map(p=>{
+      const remaining = p.amount - p.refundedAmount;
+      return `<tr><td>${esc(p.id)}</td><td>${esc(p.orderId)}</td><td>${p.method==='BALANCE'?'余额':'银行卡'}</td>
+        <td class="num">${yuan(p.amount)}</td><td class="num">${yuan(p.fee)}</td><td class="num">${yuan(p.refundedAmount)}</td>
+        <td><span class="badge ${esc(p.status)}">${PStatus[p.status]||esc(p.status)}</span></td>
+        <td class="muted">${esc(p.failReason||'—')}</td>
+        <td>${(p.status==='SUCCESS'&&remaining>0)?`<button class="btn small ghost" data-refund="${esc(p.id)}">退款</button>`:'<span class="muted">—</span>'}</td></tr>`;
+    }).join('') : '<tr><td colspan="9" class="empty">暂无支付单</td></tr>');
+  await loadLedger();
+}
+async function loadLedger() {
+  const id = $('#ledgerAccount').value;
+  const entries = id ? await api('/accounting/accounts/' + encodeURIComponent(id) + '/entries?limit=100') : [];
+  $('#ledgerTable').innerHTML = `<tr><th>分录号</th><th>时间</th><th>借贷</th><th class="num">金额（元）</th><th class="num">变动后余额</th><th>账务单据</th><th>摘要</th></tr>` +
+    (entries.length ? entries.map(e=>`<tr><td>${esc(e.id)}</td><td class="muted">${fmtTime(e.createdAt)}</td>
+      <td>${Dir[e.dir]||esc(e.dir)}</td><td class="num">${yuan(e.amount)}</td><td class="num">${yuan(e.balanceAfter)}</td>
+      <td>${esc(e.bizNo)}</td><td>${esc(e.subject)}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">暂无分录</td></tr>');
+}
+async function loadSettle() {
+  const s = await api('/settle/summary');
+  $('#settleSummary').innerHTML = `支付笔数 <b>${s.payCount}</b> ／ 交易总额 <b>¥ ${yuan(s.totalGross)}</b> ／
+    手续费 <b>¥ ${yuan(s.totalFee)}</b> ／ 商户净结算 <b>¥ ${yuan(s.totalNet)}</b> ／ 退款总额 <b>¥ ${yuan(s.totalRefund)}</b>`;
+  const recs = await api('/settle/records');
+  $('#settleTable').innerHTML = `<tr><th>结算单号</th><th>类型</th><th>支付单</th><th class="num">总额</th><th class="num">手续费</th><th class="num">净额</th><th>状态</th><th>时间</th></tr>` +
+    (recs.length ? recs.map(r=>`<tr><td>${esc(r.id)}</td><td>${r.type==='PAY'?'支付结算':'退款结算'}</td><td>${esc(r.paymentId)}</td>
+      <td class="num">${yuan(r.gross)}</td><td class="num">${yuan(r.fee)}</td><td class="num ${r.net>=0?'pos':'neg'}">${yuan(r.net)}</td>
+      <td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td><td class="muted">${fmtTime(r.createdAt)}</td></tr>`).join('')
+      : '<tr><td colspan="8" class="empty">暂无结算单</td></tr>');
+}
+async function loadNotify() {
+  const recs = await api('/notify/records');
+  $('#notifyTable').innerHTML = `<tr><th>通知 ID</th><th>事件</th><th>业务单号</th><th>状态</th><th class="num">尝试次数</th><th>回调 URL</th><th>最近错误</th><th>时间</th></tr>` +
+    (recs.length ? recs.map(n=>`<tr><td>${esc(n.id)}</td><td>${esc(n.event)}</td><td>${esc(n.bizId)}</td>
+      <td><span class="badge ${esc(n.status)}">${NStatus[n.status]||esc(n.status)}</span></td>
+      <td class="num">${n.attempts}</td><td class="muted">${esc(n.callbackUrl||'PULL')}</td>
+      <td class="muted">${esc(n.lastError||'—')}</td><td class="muted">${fmtTime(n.createdAt)}</td></tr>`).join('')
+      : '<tr><td colspan="8" class="empty">暂无通知</td></tr>');
+}
+async function loadRecon() {
+  const rep = await api('/recon/latest');
+  renderRecon(rep);
+}
+function renderRecon(rep) {
+  const checks = rep.checks || [];
+  $('#reconTable').innerHTML = `<tr><th>检查项</th><th>结果</th><th>明细</th></tr>` +
+    (checks.length ? checks.map(c=>`<tr><td>${esc(c.name)}</td>
+      <td class="${c.pass?'pass-true':'pass-false'}">${c.pass?'通过':'不通过'}</td>
+      <td class="muted">${esc(c.detail)}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="empty">尚未对账，点击「立即对账」</td></tr>');
+}
+
+const loaders = { arch:loadArch, members:loadMembers, orders:loadOrders, payments:loadPayments, settle:loadSettle, notify:loadNotify, recon:loadRecon };
+async function refresh(tab) {
+  try { await loadStats(); if (tab && loaders[tab]) await loaders[tab](); }
+  catch(e) { toast(e.message, false); }
+}
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active', x===b));
+  document.querySelectorAll('main > section').forEach(s=>s.hidden = s.id !== 'tab-'+b.dataset.tab);
+  refresh(b.dataset.tab);
+}));
+
+$('#btnMember').addEventListener('click', async ()=>{
+  try { const m = await api('/members','POST',{ name:$('#mName').value, type:$('#mKind').value });
+    $('#mName').value=''; toast('会员已注册：'+m.id + (m.appSecret?'（appId '+m.appId+'）':'')); await refresh('members');
+  } catch(e){ toast(e.message,false); }
+});
+$('#btnTopup').addEventListener('click', async ()=>{
+  try { const amount = toFen($('#topupAmount').value);
+    const r = await api('/accounting/internal/topup','POST',{ accountId:$('#topupAccount').value, amount, bizNo:uuid() });
+    $('#topupAmount').value=''; toast('充值成功，余额 '+yuan(r.balance)+' 元'); await refresh('members');
+  } catch(e){ toast(e.message,false); }
+});
+$('#btnOrder').addEventListener('click', async ()=>{
+  try { const amount = toFen($('#orderAmount').value);
+    const r = await api('/orders','POST',{ merchantId:$('#orderMerchant').value, amount, subject:$('#orderSubject').value });
+    $('#orderAmount').value=''; $('#orderSubject').value=''; toast('交易单已创建：'+r.order.id); await refresh('orders');
+  } catch(e){ toast(e.message,false); }
+});
+$('#btnNotify').addEventListener('click', async ()=>{
+  try { const url = $('#notifyUrl').value.trim();
+    await api('/notify/send','POST',{ event:'TEST', bizId:uuid(), payload:{ hello:'world' }, callbackUrl:url||null });
+    toast('通知已提交'); await refresh('notify');
+  } catch(e){ toast(e.message,false); }
+});
+$('#btnRecon').addEventListener('click', async ()=>{
+  try { const rep = await api('/recon/run','POST',{}); renderRecon(rep);
+    toast(rep.pass?'对账全部通过':'对账发现不一致', rep.pass);
+  } catch(e){ toast(e.message,false); }
+});
+$('#ledgerAccount').addEventListener('change', loadLedger);
+
+document.addEventListener('click', async ev=>{
+  const open = ev.target.dataset?.open, freeze = ev.target.dataset?.freeze,
+        pay = ev.target.dataset?.pay, close = ev.target.dataset?.close, refund = ev.target.dataset?.refund;
+  try {
+    if (open) { await api('/accounts','POST',{ memberId:open }); toast('开户成功'); await refresh('members'); }
+    if (freeze) { await api(`/accounts/${freeze}/status`,'POST',{ status:ev.target.dataset.status }); toast('账户状态已更新'); await refresh('members'); }
+    if (close) { await api(`/orders/${close}/close`,'POST',{}); toast('交易单已关闭'); await refresh('orders'); }
+    if (pay) await openPay(pay);
+    if (refund) await openRefund(refund);
+  } catch(e){ toast(e.message,false); }
+});
+
+function feeOf(amount){ const bps = stats.feeBps ?? 60; return Math.floor((amount*bps+5000)/10000); }
+async function openPay(orderId) {
+  payingOrder = orders.find(o=>o.id===orderId);
+  cashierData = await api('/cashier?orderId='+encodeURIComponent(orderId));
+  const o = cashierData.order;
+  $('#paySummary').innerHTML = `交易单：<b>${esc(o.id)}</b><br>商品：${esc(o.subject)}<br>商户：${esc(o.merchantName)}<br>应付：<b>¥ ${yuan(o.amount)}</b>`;
+  const bal = cashierData.methods.find(m=>m.method==='BALANCE');
+  $('#payAccount').innerHTML = (bal.accounts||[]).map(a=>`<option value="${esc(a.id)}">${esc(a.memberName)}（余额 ¥ ${yuan(a.balance)}）</option>`).join('');
+  updateMethod(); updateFee();
+  $('#payDialog').showModal();
+}
+function updateMethod(){
+  const m = $('#payMethod').value;
+  $('#payBalanceField').hidden = m!=='BALANCE';
+  $('#payCardField').hidden = m!=='BANKCARD';
+}
+function updateFee(){
+  const fee = feeOf(payingOrder.amount);
+  const bps = stats.feeBps ?? 60;
+  $('#payFeePreview').innerHTML = `平台手续费（${(bps/100).toFixed(2)}%）：¥ ${yuan(fee)}<br>商户净到账：¥ ${yuan(payingOrder.amount-fee)}`;
+}
+$('#payMethod').addEventListener('change', updateMethod);
+$('#payCancel').addEventListener('click', ()=>$('#payDialog').close());
+$('#payConfirm').addEventListener('click', async ()=>{
+  const btn = $('#payConfirm'); btn.disabled = true;
+  try {
+    const method = $('#payMethod').value;
+    const body = { orderId:payingOrder.id, method, requestId:uuid() };
+    if (method==='BALANCE') body.accountId = $('#payAccount').value;
+    else body.cardNo = $('#payCard').value.trim();
+    const r = await api('/cashier/pay','POST',body);
+    $('#payDialog').close();
+    toast(r.repeated?'该订单已支付（幂等）':'支付成功：'+r.payment.id);
+    await refresh('orders');
+  } catch(e){ toast(e.message,false); }
+  btn.disabled = false;
+});
+
+async function openRefund(paymentId){
+  refundingPayment = payments.find(p=>p.id===paymentId) || await api('/payments/'+encodeURIComponent(paymentId));
+  if (!refundingPayment) return;
+  const remaining = refundingPayment.amount - refundingPayment.refundedAmount;
+  $('#refundSummary').innerHTML = `支付单：<b>${esc(refundingPayment.id)}</b>（${refundingPayment.method==='BALANCE'?'余额':'银行卡'}）<br>
+    支付金额：¥ ${yuan(refundingPayment.amount)}<br>已退款：¥ ${yuan(refundingPayment.refundedAmount)}<br>可退：<b>¥ ${yuan(remaining)}</b>`;
+  $('#refundAmount').value = yuan(remaining);
+  $('#refundDialog').showModal();
+}
+$('#refundCancel').addEventListener('click', ()=>$('#refundDialog').close());
+$('#refundConfirm').addEventListener('click', async ()=>{
+  const btn = $('#refundConfirm'); btn.disabled = true;
+  try {
+    const amount = toFen($('#refundAmount').value);
+    const r = await api(`/payments/${refundingPayment.id}/refund`,'POST',{ amount, requestId:uuid() });
+    $('#refundDialog').close(); toast('退款成功 ¥ '+yuan(r.refundAmount));
+    await refresh(document.querySelector('nav button.active').dataset.tab);
+  } catch(e){ toast(e.message,false); }
+  btn.disabled = false;
+});
+
+refresh('arch');
+</script>
+</body>
+</html>
