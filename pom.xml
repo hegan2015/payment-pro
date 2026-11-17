@@ -19,6 +19,7 @@
     <description>参考支付宝领域划分的工业级支付系统：Spring Boot + Dubbo + 自研 XTS 风格 TCC</description>
 
     <modules>
+        <module>tcc-core</module>
         <module>payment-common</module>
         <module>payment-facade</module>
         <module>payment-dtx</module>
@@ -63,6 +64,11 @@
             <dependency>
                 <groupId>com.qoder.payment</groupId>
                 <artifactId>payment-facade</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.qoder.payment</groupId>
+                <artifactId>tcc-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

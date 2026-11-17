@@ -1,6 +1,6 @@
 package com.qoder.payment.payment.service;
 
-import com.qoder.payment.dtx.TccContextUtil;
+import com.qoder.tcc.TccContextUtil;
 import com.qoder.payment.facade.notify.NotifyFacade;
 import com.qoder.payment.facade.notify.NotifyRequest;
 import com.qoder.payment.facade.settle.SettleFacade;

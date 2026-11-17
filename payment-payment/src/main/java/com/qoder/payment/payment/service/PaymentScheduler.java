@@ -1,6 +1,6 @@
 package com.qoder.payment.payment.service;
 
-import com.qoder.payment.dtx.TccCoordinator;
+import com.qoder.tcc.TccCoordinator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;

@@ -2,7 +2,7 @@ package com.qoder.payment.settle.service;
 
 import com.qoder.payment.common.exception.BizException;
 import com.qoder.payment.common.result.ResultCode;
-import com.qoder.payment.dtx.IdempotentTemplate;
+import com.qoder.tcc.IdempotentTemplate;
 import com.qoder.payment.facade.settle.SettlePayRequest;
 import com.qoder.payment.facade.settle.SettleRecordDTO;
 import com.qoder.payment.facade.settle.SettleRefundRequest;

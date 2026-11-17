@@ -1,6 +1,0 @@
-com/qoder/payment/member/mapper/MemberMapper.class
-com/qoder/payment/member/convert/MemberConverter.class
-com/qoder/payment/member/service/MemberService.class
-com/qoder/payment/member/MemberApplication.class
-com/qoder/payment/member/dataobject/MemberDO.class
-com/qoder/payment/member/facade/MemberFacadeImpl.class

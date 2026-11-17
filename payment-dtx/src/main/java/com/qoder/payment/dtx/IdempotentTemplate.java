@@ -1,53 +1,28 @@
 package com.qoder.payment.dtx;
 
-import com.qoder.payment.common.exception.BizException;
-import com.qoder.payment.common.result.ResultCode;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DuplicateKeyException;
+import com.qoder.tcc.TccException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
-import java.util.List;
-import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * 工业级幂等模板（本地幂等表，先插占位再执行业务）。
- *
- * <p>占位插入、业务动作、结果回填在同一本地事务内：并发重复请求在唯一键上阻塞，
- * 待首请求提交后命中既有结果直接返回，天然防重且结果一致。
+ * 幂等模板薄适配：继承 tcc-core 通用模板，仅把组件抛出的 TccException
+ * 转回 BizException（CONFLICT → A0409），保证使用方（结算/交易/账务/通知）
+ * 经 FacadeSupport 转出的 Result 与组件化前完全一致。幂等语义零改动。
  */
-@Slf4j
-public class IdempotentTemplate {
-
-    private final JdbcTemplate jdbc;
-    private final TransactionTemplate tx;
+public class IdempotentTemplate extends com.qoder.tcc.IdempotentTemplate {
 
     public IdempotentTemplate(JdbcTemplate jdbc, PlatformTransactionManager txManager) {
-        this.jdbc = jdbc;
-        this.tx = new TransactionTemplate(txManager);
+        super(jdbc, txManager);
     }
 
+    @Override
     public <T> T execute(String bizType, String bizNo, Class<T> resultType, Supplier<T> action) {
-        return tx.execute(s -> {
-            try {
-                jdbc.update("INSERT INTO idempotent_record(biz_type,biz_no,result,created_at) VALUES(?,?,NULL,?)",
-                        bizType, bizNo, System.currentTimeMillis());
-            } catch (DuplicateKeyException e) {
-                List<Map<String, Object>> rows = jdbc.queryForList(
-                        "SELECT result FROM idempotent_record WHERE biz_type=? AND biz_no=?", bizType, bizNo);
-                String json = rows.isEmpty() ? null : (String) rows.get(0).get("result");
-                if (json == null) {
-                    throw new BizException(ResultCode.CONFLICT, "幂等请求处理中: " + bizType + "/" + bizNo);
-                }
-                log.info("幂等命中 bizType={} bizNo={}", bizType, bizNo);
-                return TccContextUtil.fromJson(json, resultType);
-            }
-            T result = action.get();
-            jdbc.update("UPDATE idempotent_record SET result=? WHERE biz_type=? AND biz_no=?",
-                    TccContextUtil.toJson(result), bizType, bizNo);
-            return result;
-        });
+        try {
+            return super.execute(bizType, bizNo, resultType, action);
+        } catch (TccException e) {
+            throw TccExceptions.toBiz(e);
+        }
     }
 }

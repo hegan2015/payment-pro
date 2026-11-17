@@ -3,7 +3,7 @@ package com.qoder.payment.trade.service;
 import com.qoder.payment.common.exception.BizException;
 import com.qoder.payment.common.result.ResultCode;
 import com.qoder.payment.common.util.MoneyUtil;
-import com.qoder.payment.dtx.IdempotentTemplate;
+import com.qoder.tcc.IdempotentTemplate;
 import com.qoder.payment.facade.member.MemberDTO;
 import com.qoder.payment.facade.member.MemberFacade;
 import com.qoder.payment.facade.trade.OrderCreateRequest;

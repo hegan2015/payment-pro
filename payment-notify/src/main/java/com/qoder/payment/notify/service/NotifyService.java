@@ -2,8 +2,8 @@ package com.qoder.payment.notify.service;
 
 import com.qoder.payment.common.exception.BizException;
 import com.qoder.payment.common.result.ResultCode;
-import com.qoder.payment.dtx.IdempotentTemplate;
-import com.qoder.payment.dtx.TccContextUtil;
+import com.qoder.tcc.IdempotentTemplate;
+import com.qoder.tcc.TccContextUtil;
 import com.qoder.payment.facade.notify.NotifyRecordDTO;
 import com.qoder.payment.facade.notify.NotifyRequest;
 import com.qoder.payment.notify.dataobject.NotifyRecordDO;

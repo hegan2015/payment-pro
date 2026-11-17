@@ -1,7 +1,0 @@
-com/qoder/payment/trade/mapper/OrderMapper.class
-com/qoder/payment/trade/service/TradeService.class
-com/qoder/payment/trade/facade/TradeTccFacadeImpl.class
-com/qoder/payment/trade/dataobject/OrderDO.class
-com/qoder/payment/trade/TradeApplication.class
-com/qoder/payment/trade/convert/OrderConverter.class
-com/qoder/payment/trade/facade/TradeFacadeImpl.class

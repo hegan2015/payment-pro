@@ -1,6 +1,0 @@
-com/qoder/payment/channel/mapper/ChannelTradeMapper.class
-com/qoder/payment/channel/dataobject/ChannelTradeDO.class
-com/qoder/payment/channel/facade/ChannelTccFacadeImpl.class
-com/qoder/payment/channel/ChannelApplication.class
-com/qoder/payment/channel/facade/ChannelFacadeImpl.class
-com/qoder/payment/channel/service/ChannelService.class

@@ -1,6 +1,0 @@
-com/qoder/payment/common/result/FacadeSupport.class
-com/qoder/payment/common/result/Result.class
-com/qoder/payment/common/util/MoneyUtil.class
-com/qoder/payment/common/exception/BizException.class
-com/qoder/payment/common/trace/TraceFilter.class
-com/qoder/payment/common/result/ResultCode.class

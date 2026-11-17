@@ -1,115 +1,60 @@
 package com.qoder.payment.dtx;
 
-import com.qoder.payment.common.exception.BizException;
-import com.qoder.payment.common.result.ResultCode;
 import com.qoder.payment.facade.tcc.TccBranchRequest;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DuplicateKeyException;
+import com.qoder.tcc.TccException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.TransactionTemplate;
-
-import java.util.List;
-import java.util.Map;
 
 /**
- * TCC 参与者模板（XTS 风格）。
- *
- * <p>通过分支日志表 tcc_branch_log 在参与者本地事务内解决三大经典问题：
- * <ul>
- *   <li>幂等：主键 (xid, branch_id, action) 冲突即返回既有结果；</li>
- *   <li>空回滚：Cancel 先于 Try 到达时落 CANCELLED 标记，不执行任何业务；</li>
- *   <li>防悬挂：Try 晚于 Cancel 到达时被 CANCELLED 标记拒绝。</li>
- * </ul>
- * 日志写入与业务动作在同一 REQUIRES_NEW 事务中提交，保证原子性。
+ * 参与者模板薄适配：继承 tcc-core 通用模板，仅做两件事——
+ * ① 提供接收 Dubbo 契约 DTO 的重载（三个参与域 Facade 实现零改动）；
+ * ② 把组件抛出的 TccException 转回 BizException，保证 FacadeSupport
+ * 转出的 Result 错误码/消息与组件化前完全一致。
+ * 幂等/空回滚/防悬挂语义全部在 tcc-core 内，零改动。
  */
-@Slf4j
-public class TccParticipantTemplate {
-
-    private final JdbcTemplate jdbc;
-    private final TransactionTemplate tx;
+public class TccParticipantTemplate extends com.qoder.tcc.TccParticipantTemplate {
 
     public TccParticipantTemplate(JdbcTemplate jdbc, PlatformTransactionManager txManager) {
-        this.jdbc = jdbc;
-        this.tx = new TransactionTemplate(txManager);
-        this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        super(jdbc, txManager);
     }
 
+    /** Dubbo 契约 DTO 重载：转换后委托组件模板。 */
     public void tryAction(TccBranchRequest req, Runnable business) {
-        tx.executeWithoutResult(s -> {
-            try {
-                insertLog(req, ParticipantStatus.TRYING);
-            } catch (DuplicateKeyException e) {
-                ParticipantStatus existing = currentStatus(req);
-                if (existing == ParticipantStatus.CANCELLED) {
-                    throw new BizException(ResultCode.CONFLICT, "TCC 悬挂拒绝: " + req.getBranchId());
-                }
-                log.info("TCC Try 幂等命中 xid={} branch={} status={}", req.getXid(), req.getBranchId(), existing);
-                return;
-            }
-            try {
-                business.run();
-            } catch (RuntimeException e) {
-                // Try 业务失败：未预留任何资源，删除日志，后续 Cancel 走空回滚
-                jdbc.update("DELETE FROM tcc_branch_log WHERE xid=? AND branch_id=? AND action=?",
-                        req.getXid(), req.getBranchId(), req.getAction());
-                throw e;
-            }
-        });
+        tryAction(TccRequests.toCore(req), business);
     }
 
     public void confirm(TccBranchRequest req, Runnable business) {
-        tx.executeWithoutResult(s -> {
-            ParticipantStatus status = currentStatus(req);
-            if (status == null) {
-                throw new BizException(ResultCode.BIZ_ERROR, "TCC Confirm 无 Try 记录: " + req.getBranchId());
-            }
-            if (status == ParticipantStatus.CONFIRMED) {
-                return;
-            }
-            if (status == ParticipantStatus.CANCELLED) {
-                throw new BizException(ResultCode.BIZ_ERROR, "TCC 已回滚分支不可提交: " + req.getBranchId());
-            }
-            business.run();
-            updateStatus(req, ParticipantStatus.CONFIRMED);
-        });
+        confirm(TccRequests.toCore(req), business);
     }
 
     public void cancel(TccBranchRequest req, Runnable business) {
-        tx.executeWithoutResult(s -> {
-            ParticipantStatus status = currentStatus(req);
-            if (status == null) {
-                insertLog(req, ParticipantStatus.CANCELLED);
-                log.info("TCC 空回滚 xid={} branch={}", req.getXid(), req.getBranchId());
-                return;
-            }
-            if (status == ParticipantStatus.CANCELLED) {
-                return;
-            }
-            if (status == ParticipantStatus.CONFIRMED) {
-                throw new BizException(ResultCode.BIZ_ERROR, "TCC 已提交分支不可回滚: " + req.getBranchId());
-            }
-            business.run();
-            updateStatus(req, ParticipantStatus.CANCELLED);
-        });
+        cancel(TccRequests.toCore(req), business);
     }
 
-    private void insertLog(TccBranchRequest req, ParticipantStatus status) {
-        long now = System.currentTimeMillis();
-        jdbc.update("INSERT INTO tcc_branch_log(xid,branch_id,action,status,context,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-                req.getXid(), req.getBranchId(), req.getAction(), status.name(), req.getContext(), now, now);
+    @Override
+    public void tryAction(com.qoder.tcc.TccBranchRequest req, Runnable business) {
+        try {
+            super.tryAction(req, business);
+        } catch (TccException e) {
+            throw TccExceptions.toBiz(e);
+        }
     }
 
-    private ParticipantStatus currentStatus(TccBranchRequest req) {
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT status FROM tcc_branch_log WHERE xid=? AND branch_id=? AND action=?",
-                req.getXid(), req.getBranchId(), req.getAction());
-        return rows.isEmpty() ? null : ParticipantStatus.valueOf((String) rows.get(0).get("status"));
+    @Override
+    public void confirm(com.qoder.tcc.TccBranchRequest req, Runnable business) {
+        try {
+            super.confirm(req, business);
+        } catch (TccException e) {
+            throw TccExceptions.toBiz(e);
+        }
     }
 
-    private void updateStatus(TccBranchRequest req, ParticipantStatus status) {
-        jdbc.update("UPDATE tcc_branch_log SET status=?, updated_at=? WHERE xid=? AND branch_id=? AND action=?",
-                status.name(), System.currentTimeMillis(), req.getXid(), req.getBranchId(), req.getAction());
+    @Override
+    public void cancel(com.qoder.tcc.TccBranchRequest req, Runnable business) {
+        try {
+            super.cancel(req, business);
+        } catch (TccException e) {
+            throw TccExceptions.toBiz(e);
+        }
     }
 }

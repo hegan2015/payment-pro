@@ -1,6 +1,0 @@
-com/qoder/payment/notify/dataobject/NotifyRecordDO.class
-com/qoder/payment/notify/NotifyApplication.class
-com/qoder/payment/notify/facade/NotifyFacadeImpl.class
-com/qoder/payment/notify/service/NotifyPusher.class
-com/qoder/payment/notify/mapper/NotifyRecordMapper.class
-com/qoder/payment/notify/service/NotifyService.class

@@ -1,7 +1,7 @@
 package com.qoder.payment.payment.service;
 
-import com.qoder.payment.dtx.TccCompletionListener;
-import com.qoder.payment.dtx.TccContextUtil;
+import com.qoder.tcc.TccCompletionListener;
+import com.qoder.tcc.TccContextUtil;
 import com.qoder.payment.facade.notify.NotifyRequest;
 import com.qoder.payment.facade.settle.SettlePayRequest;
 import com.qoder.payment.facade.settle.SettleRefundRequest;

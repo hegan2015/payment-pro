@@ -140,13 +140,14 @@
 
 ## 3. Maven 工程结构
 
-### 3.1 模块清单（16 个）
+### 3.1 模块清单（17 个）
 
 ```
 payment-pro (parent, pom)
+├── tcc-core            通用 TCC 组件（零业务耦合）：协调器/参与者模板/幂等模板/补偿/自动装配
 ├── payment-common      基础库：Result/ResultCode/BizException/MoneyUtil/TraceFilter
 ├── payment-facade      契约库：全部 Dubbo 接口 + DTO + TCC 上下文 + HealthFacade(Impl)
-├── payment-dtx         分布式事务库：TccCoordinator/TccParticipantTemplate/IdempotentTemplate
+├── payment-dtx         TCC 薄适配层：tcc-core ↔ BizException/Dubbo 参与者契约桥接
 ├── payment-registry    内嵌 ZooKeeper 进程
 ├── payment-member      ┐
 ├── payment-account     │
@@ -166,11 +167,13 @@ payment-pro (parent, pom)
 
 ```
 业务域 ──▶ payment-facade ──▶ payment-common
-业务域 ──▶ payment-dtx ─────▶ payment-facade / payment-common
+业务域 ──▶ payment-dtx ─────▶ tcc-core + payment-facade / payment-common
+tcc-core ──▶ 仅 spring-jdbc / spring-tx / spring-boot-autoconfigure / jackson / slf4j / lombok(provided)
 ```
 
 - **facade 只含接口与 DTO**，消费方只依赖契约，不依赖实现（Dubbo 的标准工程实践）。
-- **dtx 是独立可复用库**：协调器/参与者模板/幂等模板不绑定任何业务域，通过 `DtxAutoConfiguration` 自动装配，任何域引入即可获得 TCC 与幂等能力。
+- **tcc-core 是零业务耦合的通用组件**：包名 `com.qoder.tcc`，不依赖 payment-common/payment-facade/Dubbo；异常用自带 `TccException`（CONFLICT/BIZ_ERROR 两类），参与者 SPI `TccParticipant` 传输无关（方法直接抛异常），通过 `TccAutoConfiguration`（AutoConfiguration.imports 注册）自动装配。任何 Spring Boot + JDBC 项目引入即可获得 TCC 与幂等能力（接入方式见 §6.7）。
+- **payment-dtx 是薄适配层**：`DubboTccParticipant` 把 facade 的 `TccParticipantFacade`（Result.orThrow）桥接到组件 SPI；`TccCoordinator`/`TccParticipantTemplate`/`IdempotentTemplate` 三个同名薄包装继承组件类，仅做 DTO 转换与 `TccException ↔ BizException` 错误码映射（CONFLICT→A0409、BIZ_ERROR→B0001），事务语义全部在 tcc-core 内。
 - **版本集中管理**：parent 继承 `spring-boot-starter-parent:3.2.5`，import `dubbo-bom:3.2.14`，统一 MyBatis starter 3.0.3、ZooKeeper 3.8.4；内部模块版本走 `dependencyManagement`。
 - **日志冲突治理**：dubbo-zookeeper-curator5 与 zookeeper 依赖显式 exclusion 掉 log4j/reload4j/slf4j-log4j12/logback（ZK 侧），全系统统一 Logback。
 - **构建**：Maven Wrapper（`./mvnw`），Java 17（`maven.compiler.release=17`），boot 插件 repackage 成可执行 fat jar。
@@ -296,14 +299,16 @@ transfer_record    -- 转账凭证：biz_no PK（过账幂等兜底）、lines J
 
 ```
 payment-payment（协调器宿主）
-  TccCoordinator ── dtx_transaction / dtx_branch（本地库）
+  TccCoordinator（tcc-core 组件，经 payment-dtx 薄适配装配）
+       │ ── dtx_transaction / dtx_branch（本地库）
        │ Dubbo: TccParticipantFacade.tryAction/confirm/cancel
+       │ （DubboTccParticipant 桥接为组件 SPI TccParticipant）
        ├──▶ accounting 参与者（冻结/过账/解冻）
        ├──▶ channel 参与者（预授权/扣款/撤销）
        └──▶ trade 参与者（订单预留/标记已付/释放）
 ```
 
-参与者通过 `TccParticipants` 配置注册为 `Map<String, TccParticipantFacade>`（key=participant 名），协调器按分支日志中的名字路由——新增参与者只需注册 bean + registerBranch，协调器零改动。
+参与者通过 `TccParticipants` 配置注册为 `Map<String, TccParticipantFacade>`（key=participant 名），payment-dtx 适配层经 `DubboTccParticipant.wrap()` 转为组件 SPI Map 注入协调器，协调器按分支日志中的名字路由——新增参与者只需注册 bean + registerBranch，协调器零改动。
 
 ### 6.2 全局事务状态机
 
@@ -325,7 +330,7 @@ payment-payment（协调器宿主）
 
 ### 6.3 二阶段驱动与事务性终态
 
-`driveConfirm` 的关键设计（`TccCoordinator.java:140`）：
+`driveConfirm` 的关键设计（`tcc-core/.../TccCoordinator.java:136`）：
 
 ```java
 for (branch : branches) {
@@ -361,7 +366,7 @@ WHERE status IN ('TRYING','CONFIRMING','CANCELLING') AND next_retry_at <= now
 
 ### 6.5 参与者模板：三大经典问题的解法
 
-`tcc_branch_log` 主键 `(xid, branch_id, action)`，日志与业务动作在**同一个 REQUIRES_NEW 本地事务**内提交（`TccParticipantTemplate.java`）：
+`tcc_branch_log` 主键 `(xid, branch_id, action)`，日志与业务动作在**同一个 REQUIRES_NEW 本地事务**内提交（`tcc-core/.../TccParticipantTemplate.java`）：
 
 **① 幂等**
 ```
@@ -403,6 +408,66 @@ Confirm 无 Try 记录  → 抛错（不允许凭空提交）
 | Confirm 成功、终态事务未提交 | 参与者幂等跳过，终态事务重做 | 参与者幂等 + 本地事务原子性 |
 | 参与者宕机（如渠道进程被杀） | Confirm/Cancel RPC 失败 → 退避重试至其恢复 | 混沌测试 [C] 实测验证 |
 | 终态提交后 outbox 未投递 | outbox 调度续投 | 消息与终态同事务，绝不丢失 |
+
+### 6.7 组件化：tcc-core 通用组件与接入方式
+
+TCC 框架已从 payment-dtx 抽取为**零业务耦合**的通用组件 `tcc-core`（包名 `com.qoder.tcc`），事务语义、重试参数、表结构、日志与抽取前完全一致：
+
+```
+tcc-core（com.qoder.tcc，13 个类）
+├── TccCoordinator          协调器：begin/registerBranch/tryAll/commitAsync/rollbackAsync/recover
+├── TccParticipantTemplate  参与者模板：幂等/空回滚/防悬挂（REQUIRES_NEW）
+├── IdempotentTemplate      通用幂等模板（占位-执行-回填同事务）
+├── TccParticipant          参与者 SPI（传输无关，方法直接抛异常，不包 RPC 返回体）
+├── TccBranchRequest        通用分支请求 DTO（xid/branchId/action/context）
+├── TccException            通用异常：CONFLICT（冲突）/ BIZ_ERROR（业务错误）两类
+├── TccCompletionListener   终态回调（与终态落库同一本地事务，支撑事务性 outbox）
+├── TccContextUtil          上下文 JSON 序列化
+├── TccSchema               建表 DDL 常量（幂等 IF NOT EXISTS，不破坏既有数据）
+├── GlobalStatus / BranchStatus / ParticipantStatus   状态枚举
+└── TccAutoConfiguration    自动装配（META-INF/spring/AutoConfiguration.imports 注册）
+```
+
+**三处业务耦合的替代**：
+1. `BizException/ResultCode` → 组件自带 `TccException`（CONFLICT/BIZ_ERROR 语义等价）；
+2. facade 的 `TccBranchRequest` → 组件同名通用 DTO（facade DTO 保留不动，Dubbo 线上契约不变）；
+3. `TccParticipantFacade`（Result + orThrow）→ 传输无关 SPI `TccParticipant`（直接抛异常）。
+
+**payment-dtx 薄适配层**（仅 7 个类）：`DubboTccParticipant`（facade→SPI 桥接 + DTO 转换）、`TccExceptions`（TccException↔BizException 错误码映射）、`TccRequests`（双向 DTO 转换）、三个继承组件类的同名薄包装（`TccCoordinator`/`TccParticipantTemplate`/`IdempotentTemplate`，仅异常转译与 facade DTO 重载）、`DtxAutoConfiguration`（`before = TccAutoConfiguration`，适配 Bean 先注册使组件默认 Bean 按类型退让）。六个使用模块的 `TccContextUtil`/`IdempotentTemplate`/`TccCompletionListener` 等 import 已直接切到 `com.qoder.tcc`。
+
+**其他项目接入方式**（任意 Spring Boot 3 + JDBC 项目，无需 Dubbo/ZooKeeper）：
+
+```xml
+<!-- ① 依赖坐标（安装到本地/私服后引用） -->
+<dependency>
+    <groupId>com.qoder.payment</groupId>
+    <artifactId>tcc-core</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+```sql
+-- ② 建表：协调器库执行 TccSchema.COORDINATOR（dtx_transaction/dtx_branch），
+--    参与者库执行 TccSchema.PARTICIPANT（tcc_branch_log），
+--    用幂等模板的库执行 TccSchema.IDEMPOTENT（idempotent_record）。
+--    全部 IF NOT EXISTS，可纳入各自 schema.sql，重启不破坏数据。
+```
+
+```java
+// ③ 自动装配：引入依赖即获得 TccParticipantTemplate/IdempotentTemplate Bean
+//    （TccAutoConfiguration 经 AutoConfiguration.imports 注册，无需任何注解）。
+// ④ 实现 SPI：每个参与者实现 com.qoder.tcc.TccParticipant（tryAction/confirm/cancel，
+//    内部用 TccParticipantTemplate 包裹业务动作），按 participant 名注册为 Map Bean。
+// ⑤ 组装协调器（协调器宿主进程）：
+@Bean
+public TccCoordinator tccCoordinator(JdbcTemplate jdbc, PlatformTransactionManager txManager,
+                                     Map<String, TccParticipant> participants,
+                                     ObjectProvider<TccCompletionListener> listener) {
+    return new TccCoordinator(jdbc, txManager, participants, listener.getIfAvailable());
+}
+// ⑥ 定时调用 coordinator.recover()（如 @Scheduled(fixedDelay=5000)）驱动异步补偿。
+// 异常处理：组件抛 TccException（CONFLICT/BIZ_ERROR），接入方可在边界映射为自身错误码体系。
+```
 
 ---
 
@@ -853,9 +918,10 @@ JAVA_HOME 探测（corretto-18 优先，回退 java_home -v17）
 
 | 机制 | 位置 |
 |---|---|
-| TCC 协调器 | payment-dtx/.../TccCoordinator.java |
-| TCC 参与者模板 | payment-dtx/.../TccParticipantTemplate.java |
-| 幂等模板 | payment-dtx/.../IdempotentTemplate.java |
+| TCC 协调器 | tcc-core/.../TccCoordinator.java（payment-dtx 同名薄包装做异常桥接） |
+| TCC 参与者模板 | tcc-core/.../TccParticipantTemplate.java |
+| 幂等模板 | tcc-core/.../IdempotentTemplate.java |
+| TCC Dubbo 适配 | payment-dtx/.../DubboTccParticipant.java、TccExceptions.java、TccRequests.java |
 | 支付编排 | payment-payment/.../service/PaymentService.java |
 | 事务性终态+outbox | payment-payment/.../service/PaymentCompletionListener.java |
 | outbox 投递 | payment-payment/.../service/OutboxDispatcher.java |
@@ -1289,7 +1355,7 @@ CREATE TABLE IF NOT EXISTS recon_report (
 > 代码片段逐字摘自源码（略去日志/import），行号为真实位置。路径相对仓库根 `payment-pro/`。
 > 阅读顺序建议：E.1→E.4 协调器，E.5→E.7 参与者与幂等模板，E.8→E.10 支付编排与 outbox，E.11→E.12 账务与装配。
 
-### E.1 开启全局事务与注册分支 — `payment-dtx/.../TccCoordinator.java:45`
+### E.1 开启全局事务与注册分支 — `tcc-core/.../TccCoordinator.java:41`
 
 ```java
 public String begin(String bizType, String bizNo) {
@@ -1297,12 +1363,12 @@ public String begin(String bizType, String bizNo) {
     try {
         jdbc.update("INSERT INTO dtx_transaction(...,status,...) VALUES(?,?,?,?,...)",
                 xid, bizType, bizNo, GlobalStatus.TRYING.name(), ...);
-    } catch (DuplicateKeyException e) {                       // :52
-        throw new BizException(ResultCode.CONFLICT, "分布式事务已存在: " + bizType + "/" + bizNo);
+    } catch (DuplicateKeyException e) {                       // :48
+        throw new TccException(TccException.CONFLICT, "分布式事务已存在: " + bizType + "/" + bizNo);
     }
     return xid;
 }
-public String registerBranch(String xid, String participant, String action, Object context) {  // :58
+public String registerBranch(String xid, String participant, String action, Object context) {  // :54
     Integer seq = jdbc.queryForObject("SELECT COALESCE(MAX(seq),0)+1 FROM dtx_branch WHERE xid=?", ...);
     String branchId = xid + "-B" + seq;
     jdbc.update("INSERT INTO dtx_branch(...,status,context,seq) VALUES(?,?,?,?,?,?,?)",
@@ -1312,60 +1378,60 @@ public String registerBranch(String xid, String participant, String action, Obje
 ```
 
 **为什么这样写**：
-- `begin` 用 `(biz_type,biz_no)` 唯一约束做兜底——即使上层幂等失效，同一支付单也开不出第二个全局事务（A0409）。
+- `begin` 用 `(biz_type,biz_no)` 唯一约束做兜底——即使上层幂等失效，同一支付单也开不出第二个全局事务（组件抛 CONFLICT，payment-dtx 适配层映射为 A0409）。
 - 分支 `context` 序列化成 JSON **落库**而非放内存：协调器重启后 `recover()` 能从库里读出原样上下文重放二阶段，这是崩溃恢复的前提。
 - `seq` 决定 Try/Confirm/Cancel 的执行顺序，注册顺序即驱动顺序。
 
-### E.2 一阶段同步 Try — `TccCoordinator.java:67`
+### E.2 一阶段同步 Try — `tcc-core/.../TccCoordinator.java:63`
 
 ```java
 public void tryAll(String xid) {
     String failReason = null;
     for (BranchRow b : branches(xid)) {                       // 按 seq 序
         try {
-            participant(b).tryAction(request(b)).orThrow();
+            participant(b).tryAction(request(b));             // SPI 直接抛异常，无 Result 包装
             updateBranch(b, BranchStatus.TRY_OK);
         } catch (Exception e) {
             updateBranch(b, BranchStatus.TRY_FAIL);
             failReason = e.getMessage();
-            break;                                            // :77 首个失败即停
+            break;                                            // :73 首个失败即停
         }
     }
     if (failReason != null) {
         jdbc.update("UPDATE dtx_transaction SET status='CANCELLING', fail_reason=? ...", ...);
-        driveCancel(xid);                                     // :83 立即同步回滚
-        throw new BizException(ResultCode.BIZ_ERROR, failReason);  // :84 抛给调用方
+        driveCancel(xid);                                     // :79 立即同步回滚
+        throw new TccException(TccException.BIZ_ERROR, failReason);  // :80 抛给调用方（适配层转 B0001）
     }
 }
 ```
 
 **为什么这样写**：Try 必须同步——余额不足/渠道拒绝要立刻给用户明确错误。任一失败立即 `driveCancel` 把已预留资源释放（未 Try 的分支走空回滚），再抛业务异常。失败分支之后的分支不再 Try（break），减少无谓预留。
 
-### E.3 二阶段驱动与事务性终态 — `TccCoordinator.java:140`
+### E.3 二阶段驱动与事务性终态 — `tcc-core/.../TccCoordinator.java:136`
 
 ```java
 private void driveConfirm(String xid) {
     for (BranchRow b : branches(xid)) {
-        if (b.status() == BranchStatus.CONFIRMED) continue;   // :142 分支级断点续传
-        if (b.status() != BranchStatus.TRY_OK)                // :145 未就绪不允许提交
-            throw new BizException(ResultCode.BIZ_ERROR, "提交阶段存在未就绪分支: ...");
+        if (b.status() == BranchStatus.CONFIRMED) continue;   // :138 分支级断点续传
+        if (b.status() != BranchStatus.TRY_OK)                // :141 未就绪不允许提交
+            throw new TccException(TccException.BIZ_ERROR, "提交阶段存在未就绪分支: ...");
         try {
-            participant(b).confirm(request(b)).orThrow();
+            participant(b).confirm(request(b));
             updateBranch(b, BranchStatus.CONFIRMED);
         } catch (Exception e) {
-            return;                                          // :153 失败留给补偿，不抛
+            return;                                          // :149 失败留给补偿，不抛
         }
     }
-    tx.executeWithoutResult(s -> {                            // :156 ★ 同一本地事务
+    tx.executeWithoutResult(s -> {                            // :152 ★ 同一本地事务
         updateGlobal(xid, GlobalStatus.CONFIRMED);            //   全局终态
         if (listener != null) listener.onConfirmed(xid);      //   支付单翻转 + outbox 写入
     });
 }
 ```
 
-**为什么这样写**：这是事务性 outbox 的根基。全局终态、支付单 SUCCESS、outbox 两条消息在**一个本地事务**里提交——不存在"事务已提交但消息丢了"或"消息发了但状态没落"的中间态。Confirm 失败 `return` 而非抛异常，让 `bumpRetryIfPending` 登记退避，由 `recover()` 续驱；已 CONFIRMED 分支跳过实现断点续传。`driveCancel`（:165）对称，回调 `onCancelled` 落 FAILED。
+**为什么这样写**：这是事务性 outbox 的根基。全局终态、支付单 SUCCESS、outbox 两条消息在**一个本地事务**里提交——不存在"事务已提交但消息丢了"或"消息发了但状态没落"的中间态。Confirm 失败 `return` 而非抛异常，让 `bumpRetryIfPending` 登记退避，由 `recover()` 续驱；已 CONFIRMED 分支跳过实现断点续传。`driveCancel`（:161）对称，回调 `onCancelled` 落 FAILED。
 
-### E.4 补偿恢复与退避耗尽 — `TccCoordinator.java:103` / `:188`
+### E.4 补偿恢复与退避耗尽 — `tcc-core/.../TccCoordinator.java:99` / `:184`
 
 ```java
 public void recover() {
@@ -1375,7 +1441,7 @@ public void recover() {
         switch (status) {
             case CONFIRMING -> driveConfirm(xid);
             case CANCELLING -> driveCancel(xid);
-            case TRYING -> {                                 // :114 一阶段崩溃决策
+            case TRYING -> {                                 // :110 一阶段崩溃决策
                 boolean allOk = !bs.isEmpty() && bs.stream().allMatch(b -> b.status()==TRY_OK);
                 if (allOk) commitAsync(xid);                 //   全 Try 成功 → 提交
                 else { /* 置 CANCELLING */ driveCancel(xid); } //   否则 → 回滚
@@ -1384,10 +1450,10 @@ public void recover() {
         bumpRetryIfPending(xid);
     }
 }
-private void bumpRetryIfPending(String xid) {                 // :188
+private void bumpRetryIfPending(String xid) {                 // :184
     if (终态) return;
     int count = retry_count + 1;
-    if (count >= MAX_RETRY) {                                // :200 MAX_RETRY=8
+    if (count >= MAX_RETRY) {                                // :196 MAX_RETRY=8
         jdbc.update("UPDATE dtx_transaction SET status='DEAD' ...");  // 耗尽置 DEAD
         log.error("TCC 补偿重试耗尽，置 DEAD 待人工介入 xid={} retry={}", ...);
         return;
@@ -1399,23 +1465,23 @@ private void bumpRetryIfPending(String xid) {                 // :188
 
 **为什么这样写**：TRYING 态恢复是协调器一阶段崩溃的兜底——分支日志持久化使得"全 TRY_OK 则提交、否则回滚"可判定。退避累计约 21 分钟，耗尽不无限重试而是显式置 DEAD，把无法自动收敛的事务暴露给对账与人工，避免静默吞掉资金不一致。
 
-### E.5 参与者 Try：幂等/防悬挂/失败清理 — `payment-dtx/.../TccParticipantTemplate.java:39`
+### E.5 参与者 Try：幂等/防悬挂/失败清理 — `tcc-core/.../TccParticipantTemplate.java:36`
 
 ```java
 public void tryAction(TccBranchRequest req, Runnable business) {
-    tx.executeWithoutResult(s -> {                           // REQUIRES_NEW（ctor :36）
+    tx.executeWithoutResult(s -> {                           // REQUIRES_NEW（ctor :33）
         try {
             insertLog(req, ParticipantStatus.TRYING);
         } catch (DuplicateKeyException e) {
             ParticipantStatus existing = currentStatus(req);
-            if (existing == ParticipantStatus.CANCELLED)      // :45 防悬挂
-                throw new BizException(ResultCode.CONFLICT, "TCC 悬挂拒绝: ...");
-            return;                                          // :49 幂等命中，不重复执行
+            if (existing == ParticipantStatus.CANCELLED)      // :42 防悬挂
+                throw new TccException(TccException.CONFLICT, "TCC 悬挂拒绝: ...");
+            return;                                          // :46 幂等命中，不重复执行
         }
         try {
             business.run();
         } catch (RuntimeException e) {
-            jdbc.update("DELETE FROM tcc_branch_log WHERE xid=? AND branch_id=? AND action=?", ...);  // :55
+            jdbc.update("DELETE FROM tcc_branch_log WHERE xid=? AND branch_id=? AND action=?", ...);  // :52
             throw e;                                         // 未预留资源 = 无日志
         }
     });
@@ -1428,24 +1494,24 @@ public void tryAction(TccBranchRequest req, Runnable business) {
 - 业务失败时**同事务删日志**：若保留 TRYING 僵尸日志，后续 Cancel 会误执行解冻/撤销。删除后 Cancel 走空回滚，语义一致。
 - 日志与业务同 REQUIRES_NEW 事务，原子提交。
 
-### E.6 参与者 Confirm/Cancel：空回滚与状态互斥 — `TccParticipantTemplate.java:62` / `:79`
+### E.6 参与者 Confirm/Cancel：空回滚与状态互斥 — `tcc-core/.../TccParticipantTemplate.java:59` / `:76`
 
 ```java
 public void confirm(req, business) {
     tx.executeWithoutResult(s -> {
         ParticipantStatus status = currentStatus(req);
-        if (status == null) throw ...("TCC Confirm 无 Try 记录");      // :65 不允许凭空提交
-        if (status == CONFIRMED) return;                              // :68 幂等
-        if (status == CANCELLED) throw ...("已回滚分支不可提交");       // :71 互斥
+        if (status == null) throw ...("TCC Confirm 无 Try 记录");      // :62 不允许凭空提交
+        if (status == CONFIRMED) return;                              // :65 幂等
+        if (status == CANCELLED) throw ...("已回滚分支不可提交");       // :68 互斥
         business.run(); updateStatus(req, CONFIRMED);
     });
 }
 public void cancel(req, business) {
     tx.executeWithoutResult(s -> {
         ParticipantStatus status = currentStatus(req);
-        if (status == null) { insertLog(req, CANCELLED); return; }    // :82 ★ 空回滚
-        if (status == CANCELLED) return;                              // :87 幂等
-        if (status == CONFIRMED) throw ...("已提交分支不可回滚");       // :90 互斥
+        if (status == null) { insertLog(req, CANCELLED); return; }    // :79 ★ 空回滚
+        if (status == CANCELLED) return;                              // :84 幂等
+        if (status == CONFIRMED) throw ...("已提交分支不可回滚");       // :87 互斥
         business.run(); updateStatus(req, CANCELLED);
     });
 }
@@ -1453,7 +1519,7 @@ public void cancel(req, business) {
 
 **为什么这样写**：空回滚（Cancel 先于 Try 到达）时查无日志，落 CANCELLED 标记不动业务——这个标记同时成为防悬挂屏障。Confirm/Cancel 的状态互斥保护杜绝"已回滚又提交""已提交又回滚"的资金错乱。
 
-### E.7 通用幂等模板 — `payment-dtx/.../IdempotentTemplate.java:32`
+### E.7 通用幂等模板 — `tcc-core/.../IdempotentTemplate.java:30`
 
 ```java
 public <T> T execute(String bizType, String bizNo, Class<T> resultType, Supplier<T> action) {
@@ -1462,11 +1528,11 @@ public <T> T execute(String bizType, String bizNo, Class<T> resultType, Supplier
             jdbc.update("INSERT INTO idempotent_record(biz_type,biz_no,result,created_at) VALUES(?,?,NULL,?)", ...);  // 占位
         } catch (DuplicateKeyException e) {
             String json = /* SELECT result */;
-            if (json == null) throw new BizException(CONFLICT, "幂等请求处理中: ...");  // :41 首请求仍在处理
-            return TccContextUtil.fromJson(json, resultType);                          // :45 命中既有结果
+            if (json == null) throw new TccException(TccException.CONFLICT, "幂等请求处理中: ...");  // :40 首请求仍在处理
+            return TccContextUtil.fromJson(json, resultType);                          // :43 命中既有结果
         }
-        T result = action.get();                                                       // :47 业务
-        jdbc.update("UPDATE idempotent_record SET result=? WHERE ...", toJson(result)); // :48 回填
+        T result = action.get();                                                       // :45 业务
+        jdbc.update("UPDATE idempotent_record SET result=? WHERE ...", toJson(result)); // :46 回填
         return result;                                                                 // 同事务提交
     });
 }

@@ -1,7 +1,0 @@
-/Users/hegan/Documents/Qoder/payment-pro/payment-gateway/src/main/java/com/qoder/payment/gateway/GatewayApplication.java
-/Users/hegan/Documents/Qoder/payment-pro/payment-gateway/src/main/java/com/qoder/payment/gateway/web/OpenApiController.java
-/Users/hegan/Documents/Qoder/payment-pro/payment-gateway/src/main/java/com/qoder/payment/gateway/web/GatewaySupport.java
-/Users/hegan/Documents/Qoder/payment-pro/payment-gateway/src/main/java/com/qoder/payment/gateway/web/ApiController.java
-/Users/hegan/Documents/Qoder/payment-pro/payment-gateway/src/main/java/com/qoder/payment/gateway/web/GlobalExceptionHandler.java
-/Users/hegan/Documents/Qoder/payment-pro/payment-gateway/src/main/java/com/qoder/payment/gateway/web/TraceWebFilter.java
-/Users/hegan/Documents/Qoder/payment-pro/payment-gateway/src/main/java/com/qoder/payment/gateway/service/HealthService.java

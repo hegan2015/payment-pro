@@ -1,5 +1,0 @@
-com/qoder/payment/settle/mapper/SettleRecordMapper.class
-com/qoder/payment/settle/service/SettleService.class
-com/qoder/payment/settle/facade/SettleFacadeImpl.class
-com/qoder/payment/settle/dataobject/SettleRecordDO.class
-com/qoder/payment/settle/SettleApplication.class

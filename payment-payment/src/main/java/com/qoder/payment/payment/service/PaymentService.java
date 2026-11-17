@@ -3,7 +3,7 @@ package com.qoder.payment.payment.service;
 import com.qoder.payment.common.exception.BizException;
 import com.qoder.payment.common.result.ResultCode;
 import com.qoder.payment.common.util.MoneyUtil;
-import com.qoder.payment.dtx.TccCoordinator;
+import com.qoder.tcc.TccCoordinator;
 import com.qoder.payment.facade.account.AccountDTO;
 import com.qoder.payment.facade.account.AccountFacade;
 import com.qoder.payment.facade.accounting.AccountingTccContext;

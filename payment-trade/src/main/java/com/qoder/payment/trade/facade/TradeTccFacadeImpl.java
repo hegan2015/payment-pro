@@ -4,7 +4,7 @@ import com.qoder.payment.common.exception.BizException;
 import com.qoder.payment.common.result.FacadeSupport;
 import com.qoder.payment.common.result.Result;
 import com.qoder.payment.common.result.ResultCode;
-import com.qoder.payment.dtx.TccContextUtil;
+import com.qoder.tcc.TccContextUtil;
 import com.qoder.payment.dtx.TccParticipantTemplate;
 import com.qoder.payment.facade.tcc.TccBranchRequest;
 import com.qoder.payment.facade.tcc.TccParticipantFacade;

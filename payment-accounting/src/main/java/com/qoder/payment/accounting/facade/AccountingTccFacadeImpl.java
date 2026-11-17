@@ -3,7 +3,7 @@ package com.qoder.payment.accounting.facade;
 import com.qoder.payment.accounting.service.AccountingService;
 import com.qoder.payment.common.result.FacadeSupport;
 import com.qoder.payment.common.result.Result;
-import com.qoder.payment.dtx.TccContextUtil;
+import com.qoder.tcc.TccContextUtil;
 import com.qoder.payment.dtx.TccParticipantTemplate;
 import com.qoder.payment.facade.accounting.AccountingTccContext;
 import com.qoder.payment.facade.tcc.TccBranchRequest;
