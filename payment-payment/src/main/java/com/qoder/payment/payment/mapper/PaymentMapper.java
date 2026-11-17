@@ -15,9 +15,9 @@ public interface PaymentMapper {
     @Select("SELECT NEXT VALUE FOR seq_payment")
     long nextId();
 
-    @Insert("INSERT INTO payment(id,order_id,merchant_id,method,payer_account_id,card_no,merchant_account_id,amount,fee,status,"
+    @Insert("INSERT INTO payment(id,order_id,merchant_id,biz_type,method,payer_account_id,card_no,merchant_account_id,amount,fee,status,"
             + "refunded_amount,refunded_fee,channel_biz_no,fail_reason,request_id,xid,callback_url,created_at) "
-            + "VALUES(#{id},#{orderId},#{merchantId},#{method},#{payerAccountId},#{cardNo},#{merchantAccountId},#{amount},#{fee},#{status},"
+            + "VALUES(#{id},#{orderId},#{merchantId},#{bizType},#{method},#{payerAccountId},#{cardNo},#{merchantAccountId},#{amount},#{fee},#{status},"
             + "#{refundedAmount},#{refundedFee},#{channelBizNo},#{failReason},#{requestId},#{xid},#{callbackUrl},#{createdAt})")
     int insert(PaymentDO payment);
 

@@ -15,10 +15,12 @@ import com.qoder.tcc.TccContextUtil;
 import com.qoder.payment.facade.account.AccountStatusDTO;
 import com.qoder.payment.facade.accounting.AccountingTccContext;
 import com.qoder.payment.facade.accounting.EntryDTO;
+import com.qoder.payment.facade.accounting.EntryQuery;
 import com.qoder.payment.facade.accounting.TopupRequest;
 import com.qoder.payment.facade.accounting.TransferDTO;
 import com.qoder.payment.facade.accounting.TransferLineDTO;
 import com.qoder.payment.facade.accounting.TrialDTO;
+import com.qoder.payment.facade.common.PageDTO;
 import com.qoder.payment.facade.account.AccountFacade;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -99,19 +101,30 @@ public class AccountingService {
 
     public List<EntryDTO> entries(String accountId, int limit) {
         int safeLimit = limit <= 0 ? 50 : Math.min(limit, 500);
-        return entryMapper.selectByAccount(accountId, safeLimit).stream().map(e -> {
-            EntryDTO dto = new EntryDTO();
-            dto.setId(e.getId());
-            dto.setBizNo(e.getBizNo());
-            dto.setAccountId(e.getAccountId());
-            dto.setDir(e.getDir());
-            dto.setAmount(e.getAmount());
-            dto.setBalanceAfter(e.getBalanceAfter());
-            dto.setSubject(e.getSubject());
-            dto.setRefId(e.getRefId());
-            dto.setCreatedAt(e.getCreatedAt());
-            return dto;
-        }).toList();
+        return entryMapper.selectByAccount(accountId, safeLimit).stream().map(AccountingService::toEntryDTO).toList();
+    }
+
+    /** 全局分页流水（跨账户），筛选可选。 */
+    public PageDTO<EntryDTO> entriesPage(EntryQuery query) {
+        query.setPage(Math.max(query.getPage(), 1));
+        query.setSize(query.getSize() <= 0 ? 20 : Math.min(query.getSize(), 200));
+        long total = entryMapper.countPage(query);
+        List<EntryDTO> items = entryMapper.selectPage(query).stream().map(AccountingService::toEntryDTO).toList();
+        return PageDTO.of(items, query.getPage(), query.getSize(), total);
+    }
+
+    private static EntryDTO toEntryDTO(EntryDO e) {
+        EntryDTO dto = new EntryDTO();
+        dto.setId(e.getId());
+        dto.setBizNo(e.getBizNo());
+        dto.setAccountId(e.getAccountId());
+        dto.setDir(e.getDir());
+        dto.setAmount(e.getAmount());
+        dto.setBalanceAfter(e.getBalanceAfter());
+        dto.setSubject(e.getSubject());
+        dto.setRefId(e.getRefId());
+        dto.setCreatedAt(e.getCreatedAt());
+        return dto;
     }
 
     public TransferDTO transfer(String bizNo) {

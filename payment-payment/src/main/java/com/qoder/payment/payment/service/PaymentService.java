@@ -9,6 +9,10 @@ import com.qoder.payment.facade.account.AccountFacade;
 import com.qoder.payment.facade.accounting.AccountingTccContext;
 import com.qoder.payment.facade.accounting.TransferLineDTO;
 import com.qoder.payment.facade.channel.ChannelTccContext;
+import com.qoder.payment.facade.member.MemberCreateRequest;
+import com.qoder.payment.facade.member.MemberDTO;
+import com.qoder.payment.facade.member.MemberFacade;
+import com.qoder.payment.facade.payment.FundPayRequest;
 import com.qoder.payment.facade.payment.PayRequest;
 import com.qoder.payment.facade.payment.PayResultDTO;
 import com.qoder.payment.facade.payment.PaymentDTO;
@@ -17,6 +21,7 @@ import com.qoder.payment.facade.payment.RefundResultDTO;
 import com.qoder.payment.facade.risk.RiskCheckRequest;
 import com.qoder.payment.facade.risk.RiskFacade;
 import com.qoder.payment.facade.risk.RiskResultDTO;
+import com.qoder.payment.facade.trade.OrderCreateRequest;
 import com.qoder.payment.facade.trade.OrderDTO;
 import com.qoder.payment.facade.trade.TradeFacade;
 import com.qoder.payment.facade.trade.TradeTccContext;
@@ -54,6 +59,9 @@ public class PaymentService {
 
     @DubboReference
     private AccountFacade accountFacade;
+
+    @DubboReference
+    private MemberFacade memberFacade;
 
     @DubboReference
     private RiskFacade riskFacade;
@@ -98,6 +106,7 @@ public class PaymentService {
         payment.setId("P" + paymentMapper.nextId());
         payment.setOrderId(order.getId());
         payment.setMerchantId(order.getMerchantId());
+        payment.setBizType("TRADE");
         payment.setMethod(method);
         payment.setPayerAccountId(request.getAccountId());
         payment.setCardNo(request.getCardNo());
@@ -143,6 +152,112 @@ public class PaymentService {
         coordinator.tryAll(xid);
         coordinator.commitAsync(xid);
         return result(require(payment.getId()), false);
+    }
+
+    /**
+     * 资金操作支付（充值/提现）：区别于商户交易，无手续费、无渠道，走系统资金商户 SYS_FUND。
+     * 仍走完整 TCC（账务+交易分支）与完结监听，故清结算单/对账自然齐备。
+     */
+    public PayResultDTO fundPay(FundPayRequest request) {
+        requireRequestId(request.getRequestId());
+        String bizType = request.getBizType();
+        if (!"TOPUP".equals(bizType) && !"WITHDRAW".equals(bizType)) {
+            throw new BizException(ResultCode.PARAM_ERROR, "bizType 仅支持 TOPUP 或 WITHDRAW");
+        }
+        MoneyUtil.requireValid(request.getAmount());
+        PaymentDO replay = paymentMapper.selectByRequestId(request.getRequestId());
+        if (replay != null) {
+            log.info("资金支付幂等命中 requestId={} paymentId={}", request.getRequestId(), replay.getId());
+            return result(replay, true);
+        }
+        MemberDTO fundMerchant = ensureFundMerchant();
+        AccountDTO fundAccount = accountFacade.getByMember(fundMerchant.getId()).orThrow();
+        AccountDTO userAccount = accountFacade.get(request.getAccountId()).orThrow();
+        if (!"ACTIVE".equals(userAccount.getStatus())) {
+            throw new BizException(ResultCode.BIZ_ERROR, "账户已冻结: " + userAccount.getId());
+        }
+        long amount = request.getAmount();
+        if ("WITHDRAW".equals(bizType) && userAccount.getBalance() < amount) {
+            throw new BizException(ResultCode.BIZ_ERROR, "账户余额不足: " + userAccount.getId());
+        }
+        OrderCreateRequest oc = new OrderCreateRequest();
+        oc.setMerchantId(fundMerchant.getId());
+        oc.setSubject(("TOPUP".equals(bizType) ? "充值" : "提现") + "-" + userAccount.getId());
+        oc.setAmount(amount);
+        oc.setOutTradeNo(request.getRequestId());
+        oc.setBizType(bizType);
+        OrderDTO order = tradeFacade.createOrder(oc).orThrow();
+
+        PaymentDO payment = new PaymentDO();
+        payment.setId("P" + paymentMapper.nextId());
+        payment.setOrderId(order.getId());
+        payment.setMerchantId(fundMerchant.getId());
+        payment.setBizType(bizType);
+        payment.setMethod("BALANCE");
+        payment.setPayerAccountId(userAccount.getId());
+        payment.setMerchantAccountId(fundAccount.getId());
+        payment.setAmount(amount);
+        payment.setFee(0L);
+        payment.setStatus("PROCESSING");
+        payment.setRefundedAmount(0L);
+        payment.setRefundedFee(0L);
+        payment.setRequestId(request.getRequestId());
+        payment.setCallbackUrl(request.getCallbackUrl());
+        payment.setCreatedAt(System.currentTimeMillis());
+        try {
+            paymentMapper.insert(payment);
+        } catch (DuplicateKeyException e) {
+            PaymentDO existing = paymentMapper.selectByRequestId(request.getRequestId());
+            log.info("资金支付幂等命中 requestId={} paymentId={}", request.getRequestId(), existing.getId());
+            return result(existing, true);
+        }
+        String xid = coordinator.begin("PAY", payment.getId());
+        paymentMapper.updateXid(payment.getId(), xid);
+        log.info("资金支付受理 paymentId={} bizType={} accountId={} amount={} requestId={} xid={}",
+                payment.getId(), bizType, userAccount.getId(), amount, request.getRequestId(), xid);
+        coordinator.registerBranch(xid, "accounting", "PAY", fundAccountingContext(payment, bizType));
+        coordinator.registerBranch(xid, "trade", "PAY", tradeContext(order.getId(), payment.getId(), amount, payment.getId()));
+        coordinator.tryAll(xid);
+        coordinator.commitAsync(xid);
+        return result(require(payment.getId()), false);
+    }
+
+    /** 系统资金商户 SYS_FUND 懒创建（MERCHANT），供充值/提现资金单挂载，幂等。 */
+    private synchronized MemberDTO ensureFundMerchant() {
+        MemberDTO existing = memberFacade.list().orThrow().stream()
+                .filter(m -> "SYS_FUND".equals(m.getName()) && "MERCHANT".equals(m.getType()))
+                .findFirst().orElse(null);
+        if (existing == null) {
+            MemberCreateRequest r = new MemberCreateRequest();
+            r.setName("SYS_FUND");
+            r.setType("MERCHANT");
+            existing = memberFacade.create(r).orThrow();
+            log.info("创建系统资金商户 SYS_FUND memberId={}", existing.getId());
+        }
+        if (accountFacade.list(existing.getId()).orThrow().isEmpty()) {
+            accountFacade.create(existing.getId()).orThrow();
+        }
+        return existing;
+    }
+
+    private AccountingTccContext fundAccountingContext(PaymentDO payment, String bizType) {
+        AccountingTccContext ctx = new AccountingTccContext();
+        ctx.setBizNo(payment.getId());
+        ctx.setRefId(payment.getOrderId());
+        ctx.setReversed(false);
+        long amount = payment.getAmount();
+        List<TransferLineDTO> lines = new ArrayList<>();
+        if ("TOPUP".equals(bizType)) {
+            ctx.setSubject("充值");
+            lines.add(line("SYS_CASH", "D", amount));
+            lines.add(line(payment.getPayerAccountId(), "C", amount));
+        } else {
+            ctx.setSubject("提现");
+            lines.add(line(payment.getPayerAccountId(), "D", amount));
+            lines.add(line("SYS_CASH", "C", amount));
+        }
+        ctx.setLines(lines);
+        return ctx;
     }
 
     public RefundResultDTO refund(String paymentId, RefundRequest request) {

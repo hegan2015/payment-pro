@@ -13,6 +13,7 @@ public class PaymentDTO implements Serializable {
 
     private String id;
     private String orderId;
+    private String bizType;
     private String method;
     private String payerAccountId;
     private String cardNo;

@@ -2,6 +2,7 @@ package com.qoder.payment.payment.facade;
 
 import com.qoder.payment.common.result.FacadeSupport;
 import com.qoder.payment.common.result.Result;
+import com.qoder.payment.facade.payment.FundPayRequest;
 import com.qoder.payment.facade.payment.PayRequest;
 import com.qoder.payment.facade.payment.PayResultDTO;
 import com.qoder.payment.facade.payment.PaymentDTO;
@@ -23,6 +24,11 @@ public class PaymentFacadeImpl implements PaymentFacade {
     @Override
     public Result<PayResultDTO> pay(PayRequest request) {
         return FacadeSupport.execute(() -> paymentService.pay(request));
+    }
+
+    @Override
+    public Result<PayResultDTO> fundPay(FundPayRequest request) {
+        return FacadeSupport.execute(() -> paymentService.fundPay(request));
     }
 
     @Override

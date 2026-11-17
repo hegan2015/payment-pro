@@ -1,6 +1,7 @@
 package com.qoder.payment.accounting.mapper;
 
 import com.qoder.payment.accounting.dataobject.EntryDO;
+import com.qoder.payment.facade.accounting.EntryQuery;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -10,6 +11,21 @@ import java.util.List;
 
 @Mapper
 public interface EntryMapper {
+
+    String FILTER = "<where>"
+            + "<if test='accountId != null and accountId != \"\"'>AND account_id = #{accountId}</if>"
+            + "<if test='bizNo != null and bizNo != \"\"'>AND biz_no = #{bizNo}</if>"
+            + "<if test='dir != null and dir != \"\"'>AND dir = #{dir}</if>"
+            + "<if test='keyword != null and keyword != \"\"'>AND (subject LIKE CONCAT('%',#{keyword},'%') "
+            + "OR ref_id LIKE CONCAT('%',#{keyword},'%') OR account_id LIKE CONCAT('%',#{keyword},'%') "
+            + "OR biz_no LIKE CONCAT('%',#{keyword},'%'))</if>"
+            + "</where>";
+
+    @Select("<script>SELECT * FROM ledger_entry " + FILTER + " ORDER BY seq DESC LIMIT #{size} OFFSET #{offset}</script>")
+    List<EntryDO> selectPage(EntryQuery query);
+
+    @Select("<script>SELECT COUNT(*) FROM ledger_entry " + FILTER + "</script>")
+    long countPage(EntryQuery query);
 
     @Select("SELECT NEXT VALUE FOR seq_entry")
     long nextId();

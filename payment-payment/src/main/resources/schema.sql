@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS payment (
 CREATE INDEX IF NOT EXISTS idx_payment_xid ON payment (xid);
 CREATE INDEX IF NOT EXISTS idx_payment_order ON payment (order_id);
 
+-- 单据类型：TRADE 商户交易（默认）/ TOPUP 充值 / WITHDRAW 提现。
+ALTER TABLE payment ADD COLUMN IF NOT EXISTS biz_type VARCHAR(16) NOT NULL DEFAULT 'TRADE';
+
 CREATE TABLE IF NOT EXISTS refund_record (
     id         VARCHAR(32) PRIMARY KEY,
     payment_id VARCHAR(32) NOT NULL,

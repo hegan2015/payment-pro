@@ -1,6 +1,7 @@
 package com.qoder.payment.facade.accounting;
 
 import com.qoder.payment.common.result.Result;
+import com.qoder.payment.facade.common.PageDTO;
 
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,9 @@ public interface AccountingFacade {
     Result<Map<String, Long>> balances(List<String> accountIds);
 
     Result<List<EntryDTO>> entries(String accountId, int limit);
+
+    /** 全局分页流水（跨账户），筛选可选。 */
+    Result<PageDTO<EntryDTO>> entriesPage(EntryQuery query);
 
     Result<TransferDTO> transfer(String bizNo);
 

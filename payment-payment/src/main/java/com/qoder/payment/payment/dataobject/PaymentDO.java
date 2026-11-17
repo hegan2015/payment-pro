@@ -8,6 +8,7 @@ public class PaymentDO {
     private String id;
     private String orderId;
     private String merchantId;
+    private String bizType;
     private String method;
     private String payerAccountId;
     private String cardNo;

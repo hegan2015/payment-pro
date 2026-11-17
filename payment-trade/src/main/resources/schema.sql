@@ -15,6 +15,13 @@ CREATE TABLE IF NOT EXISTS trade_order (
 );
 CREATE INDEX IF NOT EXISTS idx_order_merchant ON trade_order (merchant_id);
 
+-- 商户外部交易号幂等（可选字段）：同商户重复 outTradeNo 下单返回已有订单，杜绝重试孤儿单。
+ALTER TABLE trade_order ADD COLUMN IF NOT EXISTS out_trade_no VARCHAR(64);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_order_out_trade ON trade_order (merchant_id, out_trade_no);
+
+-- 单据类型：TRADE 商户交易（默认）/ TOPUP 充值 / WITHDRAW 提现。
+ALTER TABLE trade_order ADD COLUMN IF NOT EXISTS biz_type VARCHAR(16) NOT NULL DEFAULT 'TRADE';
+
 CREATE TABLE IF NOT EXISTS tcc_branch_log (
     xid        VARCHAR(64) NOT NULL,
     branch_id  VARCHAR(80) NOT NULL,

@@ -118,9 +118,15 @@
 
   <section id="tab-payments" hidden>
     <div class="card"><h2>支付单列表</h2><div class="table-wrap"><table id="paymentTable"></table></div></div>
-    <div class="card"><h2>账户流水（账务域分录）</h2>
-      <div class="row" style="margin-bottom:12px"><div class="field"><label>账户</label><select id="ledgerAccount"></select></div></div>
-      <div class="table-wrap"><table id="ledgerTable"></table></div></div>
+    <div class="card"><h2>账务流水（全局 · 跨账户分页）</h2>
+      <div class="row" style="margin-bottom:12px">
+        <div class="field"><label>账户</label><select id="ledgerAccount"></select></div>
+        <div class="field"><label>借贷</label><select id="ledgerDir"><option value="">全部</option><option value="D">借</option><option value="C">贷</option></select></div>
+        <div class="field"><label>关键字</label><input id="ledgerKeyword" placeholder="摘要/单据号/账户/参考号"></div>
+        <button class="btn" id="btnLedgerQuery">查询</button>
+      </div>
+      <div class="table-wrap"><table id="ledgerTable"></table></div>
+      <div class="row" id="ledgerPager" style="margin-top:12px;justify-content:flex-end;align-items:center;gap:8px"></div></div>
   </section>
 
   <section id="tab-settle" hidden>
@@ -175,8 +181,9 @@ const PStatus = { PROCESSING:'处理中', SUCCESS:'成功', FAILED:'失败', REF
 const NStatus = { PULL:'PULL 待拉取', PENDING:'投递中', DELIVERED:'已送达', SUCCESS:'已送达', FAILED:'重试耗尽', DEAD:'重试耗尽' };
 const Kind = { USER:'用户', MERCHANT:'商户' };
 const Dir = { D:'借', C:'贷' };
+const BizType = { TRADE:'交易', TOPUP:'充值', WITHDRAW:'提现' };
 
-let members=[], accounts=[], orders=[], payments=[], stats={}, cashierData=null, payingOrder=null, refundingPayment=null;
+let members=[], accounts=[], orders=[], payments=[], stats={}, cashierData=null, payingOrder=null, refundingPayment=null, ledgerPage=1;
 
 async function api(path, method='GET', body) {
   const opt = { method, headers:{ 'Content-Type':'application/json' } };
@@ -202,6 +209,12 @@ function fill(sel, list, keep) {
   const old = keep ? sel.value : null;
   sel.innerHTML = list.map(x=>`<option value="${esc(x.id)}">${esc(x.name||x.memberName)}（${esc(x.id)}）</option>`).join('');
   if (old && list.some(x=>x.id===old)) sel.value = old;
+}
+function fillLedgerAccounts() {
+  const sel = $('#ledgerAccount'), old = sel.value;
+  fill(sel, accounts, true);
+  sel.insertAdjacentHTML('afterbegin', '<option value="">全部账户</option>');
+  sel.value = old && accounts.some(a=>a.id===old) ? old : '';
 }
 
 async function loadStats() {
@@ -246,44 +259,55 @@ async function loadMembers() {
     </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无账户</td></tr>');
   fill($('#topupAccount'), accounts.filter(a=>a.status==='ACTIVE'), true);
   fill($('#orderMerchant'), members.filter(m=>m.type==='MERCHANT'), true);
-  fill($('#ledgerAccount'), accounts, true);
+  fillLedgerAccounts();
 }
 async function loadOrders() {
   orders = await api('/orders');
   members = await api('/members');
   fill($('#orderMerchant'), members.filter(m=>m.type==='MERCHANT'), true);
-  $('#orderTable').innerHTML = `<tr><th>交易单号</th><th>标题</th><th>商户</th><th class="num">金额（元）</th><th>状态</th><th class="num">已退款</th><th>创建时间</th><th>操作</th></tr>` +
+  $('#orderTable').innerHTML = `<tr><th>交易单号</th><th>类型</th><th>标题</th><th>商户</th><th class="num">金额（元）</th><th>状态</th><th class="num">已退款</th><th>创建时间</th><th>操作</th></tr>` +
     (orders.length ? orders.map(o=>{
       let act = '';
       if (o.status==='CREATED') act = `<button class="btn small" data-pay="${esc(o.id)}">支付</button> <button class="btn small danger" data-close="${esc(o.id)}">关闭</button>`;
-      else if (o.status==='PAID'||o.status==='PARTIAL_REFUNDED') act = `<button class="btn small ghost" data-refund="${esc(o.paymentId)}">退款</button>`;
-      return `<tr><td>${esc(o.id)}</td><td>${esc(o.subject)}</td><td>${esc(o.merchantName)}</td>
+      else if ((o.status==='PAID'||o.status==='PARTIAL_REFUNDED')&&(!o.bizType||o.bizType==='TRADE')) act = `<button class="btn small ghost" data-refund="${esc(o.paymentId)}">退款</button>`;
+      return `<tr><td>${esc(o.id)}</td><td><span class="badge kind ${esc(o.bizType||'TRADE')}">${BizType[o.bizType]||esc(o.bizType||'交易')}</span></td><td>${esc(o.subject)}</td><td>${esc(o.merchantName)}</td>
         <td class="num">${yuan(o.amount)}</td><td><span class="badge ${esc(o.status)}">${OStatus[o.status]||esc(o.status)}</span></td>
         <td class="num">${yuan(o.refundedAmount)}</td><td class="muted">${fmtTime(o.createdAt)}</td><td>${act||'<span class="muted">—</span>'}</td></tr>`;
-    }).join('') : '<tr><td colspan="8" class="empty">暂无交易单</td></tr>');
+    }).join('') : '<tr><td colspan="9" class="empty">暂无交易单</td></tr>');
 }
 async function loadPayments() {
   payments = await api('/payments');
   accounts = await api('/accounts');
-  fill($('#ledgerAccount'), accounts, true);
-  $('#paymentTable').innerHTML = `<tr><th>支付单号</th><th>交易单</th><th>方式</th><th class="num">金额</th><th class="num">手续费</th><th class="num">已退款</th><th>状态</th><th>失败原因</th><th>操作</th></tr>` +
+  fillLedgerAccounts();
+  $('#paymentTable').innerHTML = `<tr><th>支付单号</th><th>类型</th><th>交易单</th><th>方式</th><th class="num">金额</th><th class="num">手续费</th><th class="num">已退款</th><th>状态</th><th>失败原因</th><th>操作</th></tr>` +
     (payments.length ? payments.map(p=>{
       const remaining = p.amount - p.refundedAmount;
-      return `<tr><td>${esc(p.id)}</td><td>${esc(p.orderId)}</td><td>${p.method==='BALANCE'?'余额':'银行卡'}</td>
+      return `<tr><td>${esc(p.id)}</td><td><span class="badge kind ${esc(p.bizType||'TRADE')}">${BizType[p.bizType]||esc(p.bizType||'交易')}</span></td><td>${esc(p.orderId)}</td><td>${p.method==='BALANCE'?'余额':'银行卡'}</td>
         <td class="num">${yuan(p.amount)}</td><td class="num">${yuan(p.fee)}</td><td class="num">${yuan(p.refundedAmount)}</td>
         <td><span class="badge ${esc(p.status)}">${PStatus[p.status]||esc(p.status)}</span></td>
         <td class="muted">${esc(p.failReason||'—')}</td>
-        <td>${(p.status==='SUCCESS'&&remaining>0)?`<button class="btn small ghost" data-refund="${esc(p.id)}">退款</button>`:'<span class="muted">—</span>'}</td></tr>`;
-    }).join('') : '<tr><td colspan="9" class="empty">暂无支付单</td></tr>');
+        <td>${(p.status==='SUCCESS'&&remaining>0&&(!p.bizType||p.bizType==='TRADE'))?`<button class="btn small ghost" data-refund="${esc(p.id)}">退款</button>`:'<span class="muted">—</span>'}</td></tr>`;
+    }).join('') : '<tr><td colspan="10" class="empty">暂无支付单</td></tr>');
   await loadLedger();
 }
-async function loadLedger() {
-  const id = $('#ledgerAccount').value;
-  const entries = id ? await api('/accounting/accounts/' + encodeURIComponent(id) + '/entries?limit=100') : [];
-  $('#ledgerTable').innerHTML = `<tr><th>分录号</th><th>时间</th><th>借贷</th><th class="num">金额（元）</th><th class="num">变动后余额</th><th>账务单据</th><th>摘要</th></tr>` +
+async function loadLedger(page=1) {
+  ledgerPage = page;
+  const params = new URLSearchParams({ page, size: 20 });
+  const acc = $('#ledgerAccount').value; if (acc) params.set('accountId', acc);
+  const dir = $('#ledgerDir').value; if (dir) params.set('dir', dir);
+  const kw = $('#ledgerKeyword').value.trim(); if (kw) params.set('keyword', kw);
+  const res = await api('/accounting/entries?' + params.toString());
+  const entries = res.items || [];
+  $('#ledgerTable').innerHTML = `<tr><th>分录号</th><th>时间</th><th>账户</th><th>借贷</th><th class="num">金额（元）</th><th class="num">变动后余额</th><th>账务单据</th><th>参考号</th><th>摘要</th></tr>` +
     (entries.length ? entries.map(e=>`<tr><td>${esc(e.id)}</td><td class="muted">${fmtTime(e.createdAt)}</td>
-      <td>${Dir[e.dir]||esc(e.dir)}</td><td class="num">${yuan(e.amount)}</td><td class="num">${yuan(e.balanceAfter)}</td>
-      <td>${esc(e.bizNo)}</td><td>${esc(e.subject)}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">暂无分录</td></tr>');
+      <td>${esc(e.accountId)}</td><td>${Dir[e.dir]||esc(e.dir)}</td><td class="num">${yuan(e.amount)}</td><td class="num">${yuan(e.balanceAfter)}</td>
+      <td>${esc(e.bizNo)}</td><td class="muted">${esc(e.refId||'—')}</td><td>${esc(e.subject)}</td></tr>`).join('') : '<tr><td colspan="9" class="empty">暂无分录</td></tr>');
+  const pages = Math.max(1, Math.ceil((res.total||0) / (res.size||20)));
+  $('#ledgerPager').innerHTML = `<span class="muted">共 ${res.total||0} 条 · 第 ${res.page}/${pages} 页</span>
+    <button class="btn small ghost" id="ledgerPrev" ${res.page<=1?'disabled':''}>上一页</button>
+    <button class="btn small ghost" id="ledgerNext" ${res.page>=pages?'disabled':''}>下一页</button>`;
+  $('#ledgerPrev').onclick = ()=>loadLedger(res.page-1);
+  $('#ledgerNext').onclick = ()=>loadLedger(res.page+1);
 }
 async function loadSettle() {
   const s = await api('/settle/summary');
@@ -357,7 +381,10 @@ $('#btnRecon').addEventListener('click', async ()=>{
     toast(rep.pass?'对账全部通过':'对账发现不一致', rep.pass);
   } catch(e){ toast(e.message,false); }
 });
-$('#ledgerAccount').addEventListener('change', loadLedger);
+$('#ledgerAccount').addEventListener('change', ()=>loadLedger(1));
+$('#ledgerDir').addEventListener('change', ()=>loadLedger(1));
+$('#btnLedgerQuery').addEventListener('click', ()=>loadLedger(1));
+$('#ledgerKeyword').addEventListener('keydown', e=>{ if (e.key==='Enter') loadLedger(1); });
 
 document.addEventListener('click', async ev=>{
   const open = ev.target.dataset?.open, freeze = ev.target.dataset?.freeze,

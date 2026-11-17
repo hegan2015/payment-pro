@@ -5,10 +5,12 @@ import com.qoder.payment.common.result.FacadeSupport;
 import com.qoder.payment.common.result.Result;
 import com.qoder.payment.facade.accounting.AccountingFacade;
 import com.qoder.payment.facade.accounting.EntryDTO;
+import com.qoder.payment.facade.accounting.EntryQuery;
 import com.qoder.payment.facade.accounting.PostRequest;
 import com.qoder.payment.facade.accounting.TopupRequest;
 import com.qoder.payment.facade.accounting.TransferDTO;
 import com.qoder.payment.facade.accounting.TrialDTO;
+import com.qoder.payment.facade.common.PageDTO;
 import lombok.RequiredArgsConstructor;
 import org.apache.dubbo.config.annotation.DubboService;
 
@@ -47,6 +49,11 @@ public class AccountingFacadeImpl implements AccountingFacade {
     @Override
     public Result<List<EntryDTO>> entries(String accountId, int limit) {
         return FacadeSupport.execute(() -> accountingService.entries(accountId, limit));
+    }
+
+    @Override
+    public Result<PageDTO<EntryDTO>> entriesPage(EntryQuery query) {
+        return FacadeSupport.execute(() -> accountingService.entriesPage(query));
     }
 
     @Override

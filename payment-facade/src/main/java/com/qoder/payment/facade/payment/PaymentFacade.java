@@ -12,6 +12,9 @@ public interface PaymentFacade {
 
     Result<PayResultDTO> pay(PayRequest request);
 
+    /** 资金操作支付（充值/提现）：无手续费，走系统资金商户，仍经 TCC+清结算。 */
+    Result<PayResultDTO> fundPay(FundPayRequest request);
+
     Result<RefundResultDTO> refund(String paymentId, RefundRequest request);
 
     Result<List<PaymentDTO>> listPayments();

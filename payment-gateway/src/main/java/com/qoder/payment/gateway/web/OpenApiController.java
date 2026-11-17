@@ -11,6 +11,7 @@ import com.qoder.payment.facade.accounting.TransferLineDTO;
 import com.qoder.payment.facade.member.MemberCreateRequest;
 import com.qoder.payment.facade.member.MemberDTO;
 import com.qoder.payment.facade.member.MemberFacade;
+import com.qoder.payment.facade.payment.FundPayRequest;
 import com.qoder.payment.facade.payment.PayRequest;
 import com.qoder.payment.facade.payment.PaymentFacade;
 import com.qoder.payment.facade.payment.RefundRequest;
@@ -64,6 +65,7 @@ public class OpenApiController {
         request.setMerchantId(merchant.getId());
         request.setSubject(str(body, "subject"));
         request.setAmount(longOf(body.get("amount")));
+        request.setOutTradeNo(body.get("outTradeNo") == null ? null : body.get("outTradeNo").toString());
         return GatewaySupport.of(tradeFacade.createOrder(request));
     }
 
@@ -146,6 +148,30 @@ public class OpenApiController {
     public ResponseEntity<Object> accountBalance(@RequestBody Map<String, Object> body) {
         verify(body);
         return GatewaySupport.of(accountingFacade.balance(str(body, "accountId")));
+    }
+
+    /** 充值资金单：交易单+支付单（SYS_FUND，无手续费），bizNo 幂等，返回支付单。 */
+    @PostMapping("/fund.topup")
+    public ResponseEntity<Object> fundTopup(@RequestBody Map<String, Object> body) {
+        verify(body);
+        return GatewaySupport.of(paymentFacade.fundPay(fundRequest(body, "TOPUP")));
+    }
+
+    /** 提现资金单：交易单+支付单（SYS_FUND，无手续费），bizNo 幂等，返回支付单。 */
+    @PostMapping("/fund.withdraw")
+    public ResponseEntity<Object> fundWithdraw(@RequestBody Map<String, Object> body) {
+        verify(body);
+        return GatewaySupport.of(paymentFacade.fundPay(fundRequest(body, "WITHDRAW")));
+    }
+
+    private static FundPayRequest fundRequest(Map<String, Object> body, String bizType) {
+        FundPayRequest request = new FundPayRequest();
+        request.setBizType(bizType);
+        request.setAccountId(str(body, "accountId"));
+        request.setAmount(longOf(body.get("amount")));
+        request.setRequestId(str(body, "bizNo"));
+        request.setCallbackUrl(body.get("callbackUrl") == null ? null : body.get("callbackUrl").toString());
+        return request;
     }
 
     @PostMapping("/trade.refund")

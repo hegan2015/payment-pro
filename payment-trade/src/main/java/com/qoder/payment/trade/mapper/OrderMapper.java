@@ -15,12 +15,15 @@ public interface OrderMapper {
     @Select("SELECT NEXT VALUE FOR seq_order")
     long nextId();
 
-    @Insert("INSERT INTO trade_order(id,merchant_id,merchant_name,subject,amount,status,payment_id,refunded_amount,created_at,paid_at,closed_at) "
-            + "VALUES(#{id},#{merchantId},#{merchantName},#{subject},#{amount},#{status},#{paymentId},#{refundedAmount},#{createdAt},#{paidAt},#{closedAt})")
+    @Insert("INSERT INTO trade_order(id,merchant_id,merchant_name,out_trade_no,biz_type,subject,amount,status,payment_id,refunded_amount,created_at,paid_at,closed_at) "
+            + "VALUES(#{id},#{merchantId},#{merchantName},#{outTradeNo},#{bizType},#{subject},#{amount},#{status},#{paymentId},#{refundedAmount},#{createdAt},#{paidAt},#{closedAt})")
     int insert(OrderDO order);
 
     @Select("SELECT * FROM trade_order WHERE id=#{id}")
     OrderDO selectById(String id);
+
+    @Select("SELECT * FROM trade_order WHERE merchant_id=#{merchantId} AND out_trade_no=#{outTradeNo}")
+    OrderDO selectByOutTradeNo(@Param("merchantId") String merchantId, @Param("outTradeNo") String outTradeNo);
 
     @Select("SELECT * FROM trade_order ORDER BY created_at DESC, id DESC")
     List<OrderDO> selectAll();

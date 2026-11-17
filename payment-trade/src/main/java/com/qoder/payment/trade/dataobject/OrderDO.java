@@ -8,6 +8,8 @@ public class OrderDO {
     private String id;
     private String merchantId;
     private String merchantName;
+    private String outTradeNo;
+    private String bizType;
     private String subject;
     private Long amount;
     private String status;

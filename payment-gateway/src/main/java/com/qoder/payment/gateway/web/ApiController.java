@@ -3,6 +3,7 @@ package com.qoder.payment.gateway.web;
 import com.qoder.payment.common.result.Result;
 import com.qoder.payment.facade.account.AccountFacade;
 import com.qoder.payment.facade.accounting.AccountingFacade;
+import com.qoder.payment.facade.accounting.EntryQuery;
 import com.qoder.payment.facade.accounting.TopupRequest;
 import com.qoder.payment.facade.cashier.CashierFacade;
 import com.qoder.payment.facade.channel.ChannelFacade;
@@ -155,6 +156,24 @@ public class ApiController {
     public ResponseEntity<Object> entries(@PathVariable String id,
                                           @RequestParam(defaultValue = "100") int limit) {
         return GatewaySupport.of(accountingFacade.entries(id, limit));
+    }
+
+    /** 全局账务流水分页（跨账户），筛选可选。 */
+    @GetMapping("/accounting/entries")
+    public ResponseEntity<Object> entriesPage(@RequestParam(required = false) String accountId,
+                                              @RequestParam(required = false) String bizNo,
+                                              @RequestParam(required = false) String dir,
+                                              @RequestParam(required = false) String keyword,
+                                              @RequestParam(defaultValue = "1") int page,
+                                              @RequestParam(defaultValue = "20") int size) {
+        EntryQuery query = new EntryQuery();
+        query.setAccountId(accountId);
+        query.setBizNo(bizNo);
+        query.setDir(dir);
+        query.setKeyword(keyword);
+        query.setPage(page);
+        query.setSize(size);
+        return GatewaySupport.of(accountingFacade.entriesPage(query));
     }
 
     @GetMapping("/accounting/accounts/{id}/balance")

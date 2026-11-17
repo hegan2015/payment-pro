@@ -2,7 +2,8 @@
 
 > 参考支付宝领域划分的工业级支付系统
 > Spring Boot 3.2 + Apache Dubbo 3.2 + 自研 XTS 风格 TCC + 事务性 Outbox
-> 版本：1.3.0 ｜ 文档日期：2026-11-17
+> 版本：1.7.0 ｜ 文档日期：2026-11-17
+> v1.7 更新：充值/提现升级为资金单（fund.topup/fund.withdraw → 交易单+支付单，biz_type 区分 TRADE/TOPUP/WITHDRAW，SYS_FUND 系统资金商户、fee=0、BALANCE、完整 TCC）；账务流水跨账户全局分页查询（详见 §17）
 > v1.3 更新：HTTPS 8443 双连接器 + 自签证书自动生成；OpenAPI 扩展账户/退款/查询端点与通用幂等过账，支撑 ride-pro 双账本镜像接入（详见 §16）
 > v1.2 更新：TCC 抽成零业务耦合通用组件 tcc-core（com.qoder.tcc，自动装配）；随后整体移除 payment-dtx 模块，业务模块直依赖 tcc-core（16 模块），错误码映射下沉 FacadeSupport，详见 §3.2 与 §6.7
 > v1.1 细化：新增附录 C 字段级数据字典、附录 D 接口契约清单、附录 E 核心代码走读、附录 F 异常与边界场景全集
@@ -928,10 +929,12 @@ JAVA_HOME 探测（corretto-18 优先，回退 java_home -v17）
 | 端点 | 语义 |
 |---|---|
 | account.open | 商户侧用户开户：name+type 幂等（查会员→缺则建→查账户→缺则开），返回 {memberId, accountId} |
-| account.topup | 充值（AccountingFacade.topup，bizNo 幂等） |
+| account.topup | 充值（AccountingFacade.topup，bizNo 幂等）——**v1.7.0 起 ride 镜像改用 fund.topup** |
 | account.transfer | 通用两腿划转（from D / to C） |
-| account.withdraw | 提现出金（D 账户 / C SYS_CASH） |
+| account.withdraw | 提现出金（D 账户 / C SYS_CASH）——**v1.7.0 起 ride 镜像改用 fund.withdraw** |
 | account.balance | 余额查询（裸数字） |
+| fund.topup | 充值资金单（交易单 TOPUP + 支付单，SYS_FUND/fee=0/BALANCE，requestId 幂等），返回 {payment:{id...}}（v1.7.0） |
+| fund.withdraw | 提现资金单（交易单 WITHDRAW + 支付单，D 账户 / C SYS_CASH，requestId 幂等），返回 {payment:{id...}}（v1.7.0） |
 | trade.refund | 标准退款（paymentId + amount + outRefundNo） |
 | trade.query | 订单+支付单查询（商户 PULL 补查对账） |
 
@@ -939,11 +942,39 @@ trade.pay 增加可选 `callbackUrl`（异步通知投递地址）。账务侧�
 
 ### 16.3 ride-pro 双账本接入（对端视角）
 
-ride-pro 以商户身份接入（integrate-payment.sh 注册 name=ride-pro 的 MERCHANT）：本地钱包仍是资金权威，每笔资金操作同事务写镜像 outbox，单线程顺序投递——TOPUP→account.topup；PAY→trade.create+trade.pay(BALANCE)+商户→司机分成划转；REFUND→按本地借贷腿划转（司机追回+商户退乘客，**不走 trade.refund**，因打车退款含平台兜底语义）；WITHDRAW→account.withdraw。确定性 bizNo 幂等 + 退避重试 + DEAD 人工重放；payment-pro 宕机时 ride 本地资金流不受影响，恢复后镜像追平。支付手续费（fee-bps→SYS_FEE）为支付系统营收，ride 侧对账口径予以扣除。详见 ride-pro DESIGN.md §19。
+ride-pro 以商户身份接入（integrate-payment.sh 注册 name=ride-pro 的 MERCHANT）：本地钱包仍是资金权威，每笔资金操作先落 PENDING 流水再**同步**调用 payment-pro，凭回执确认动账——TOPUP→fund.topup（资金单）；PAY→trade.create+trade.pay(BALANCE)+商户→司机分成划转；REFUND→按本地借贷腿划转（司机追回+商户退乘客，**不走 trade.refund**，因打车退款含平台兜底语义）；WITHDRAW→fund.withdraw（资金单）。确定性 bizNo/requestId 幂等 + 退避重试 + DEAD 人工重放；payment-pro 宕机时 ride 本地资金流不受影响（PENDING 留痕），恢复后镜像追平。支付手续费（fee-bps→SYS_FEE）为支付系统营收，ride 侧对账口径予以扣除。详见 ride-pro DESIGN.md §19。
 
 ### 16.4 验证记录（2026-11-17）
 
 ride-pro `verify-integration.py` 15/15（充值/支付/部分退款/提现双账本增量一致、回调留痕、停 payment-pro 混沌本地不受影响+恢复追平、两边对账全过）；本系统回归 smoke-test.py 79/79、verify-pro.py 22/22，OpenAPI/HTTPS 扩展未破坏既有行为。
+
+## 17. 资金单与全局分页流水（v1.7.0）
+
+### 17.1 充值/提现升级为交易单+支付单
+
+v1.3.0 的 account.topup/account.withdraw 仅产生账务分录，无交易单/支付单，与商户交易 PAY 不对称。v1.7.0 新增 `PaymentService.fundPay(FundPayRequest)`，使充值/提现与 PAY 同构——**每笔资金操作都有一笔交易单 + 一笔支付单**：
+
+- **biz_type 判别**：trade_order 与 payment 各增 `biz_type VARCHAR(16) NOT NULL DEFAULT 'TRADE'`（schema.sql `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`），取值 TRADE/TOPUP/WITHDRAW。普通 `pay()` 显式置 TRADE，`fundPay()` 置 TOPUP/WITHDRAW；OrderDTO/PaymentDTO 透出 bizType，控制台交易单/支付单列表新增「类型」列（充值/提现/交易徽标）。
+- **系统资金商户 SYS_FUND**：`ensureFundMerchant()`（synchronized）懒创建 name=SYS_FUND 的 MERCHANT 会员 + 账户，作为资金单商户。资金单 **fee=0、method=BALANCE、无渠道分支**。
+- **完整 TCC**：`coordinator.begin("PAY")` + 账务分支（fundAccountingContext）+ 交易分支（tradeContext），tryAll→commitAsync。账务 bizNo=**支付单 id**、refId=**交易单 id**：TOPUP D SYS_CASH / C 用户；WITHDRAW D 用户 / C SYS_CASH。借贷净额与旧 account.topup/withdraw 完全一致。
+- **幂等**：FundPayRequest.requestId（=ride refKey）→ 支付单 request_id 唯一 + 交易单 outTradeNo 唯一；重复请求 replay 返回原支付单（repeated=true）。WITHDRAW 先校验账户可用余额。
+- **完结与对账自然齐备**：复用通用 `PaymentCompletionListener`——终态翻转 SUCCESS + 写 SETTLE_PAY/NOTIFY_PAY outbox。故资金单天然满足五方对账：① transfer(支付单 id) 借方合计==amount；② 交易单 PAID；③ 每笔支付单有 PAY 结算单；④ BALANCE 免渠道 CAPTURED。**ReconService 无需任何改动**。
+- **OpenAPI**：`POST /openapi/fund.topup`、`/openapi/fund.withdraw`（验签后 fundPay），返回 PayResultDTO{payment:{id...},repeated}。ride-pro PaymentProClient.topup/withdraw 改调资金单端点并解析支付单 id 作回执；MirrorExecutor WITHDRAW 由 void 改为返回支付单 id。
+
+### 17.2 账务流水跨账户全局分页查询
+
+原 entries 查询仅限单账户、无分页。v1.7.0 新增全局分页：
+
+- **契约**：`EntryQuery{accountId?,bizNo?,dir?,keyword?,page=1,size=20}`（getOffset=(max(page,1)-1)*size）；`PageDTO<T>{items,page,size,total}`。`AccountingFacade.entriesPage(EntryQuery)` → `Result<PageDTO<EntryDTO>>`。
+- **实现**：EntryMapper 动态 `<where>` FILTER（accountId/bizNo/dir 精确 + keyword LIKE 匹配 subject/ref_id/account_id/biz_no）+ `selectPage`（ORDER BY seq DESC LIMIT #{size} OFFSET #{offset}）+ `countPage`。AccountingService.entriesPage 钳制 page≥1、size∈[1,200]。**accountId 留空即跨账户查总的**。
+- **REST**：`GET /api/accounting/entries?accountId=&bizNo=&dir=&keyword=&page=1&size=20`。
+- **控制台**：账务流水卡升级为全局分页——账户下拉含「全部账户」+ 借贷方向 + 关键字筛选 + 上一页/下一页分页器（共 N 条·第 x/y 页），9 列（分录号/时间/账户/借贷/金额/变动后余额/账务单据/参考号/摘要）。资金单分录账务单据=支付单 id、参考号=交易单 id、摘要=充值/提现。
+
+### 17.3 验证记录（2026-11-17，v1.7.0）
+
+本系统 smoke-test.py **79/79**、verify-pro.py **22/22**（含持久化重启）；ride-pro verify-integration.py **24/24**（[A]/[D] 校验资金单 TOPUP/WITHDRAW 交易单 PAID + 支付单 + 账务 refId 可见）、单测 **19/19**。控制台浏览器实测：全局流水 109 条/6 页翻页正常、借贷筛选（D 向 51 条）、账户「全部账户」跨账户查询、交易单/支付单「类型」列充值/提现/交易徽标、资金单退款按钮隐藏（仅 TRADE 可退）；ride 管理端流水「支付回执」列显示资金单支付单 id。jar 内嵌静态资源与源码一致。
+
+联调修复：① 普通 pay() 未置 bizType → INSERT 显式传 NULL 撞 NOT NULL（DEFAULT 仅在省略列时生效），补 `payment.setBizType("TRADE")`；② 交易单列表退款按钮对非 TRADE 资金单隐藏（与支付单列表一致）；③ verify-integration [G] 对账改轮询等待结算 outbox 异步投递收敛（消除时序抖动）。
 
 ## 附录 A：关键代码索引
 
@@ -1093,6 +1124,10 @@ CREATE TABLE IF NOT EXISTS trade_order (
     closed_at       BIGINT
 );
 CREATE INDEX IF NOT EXISTS idx_order_merchant ON trade_order (merchant_id);
+-- v1.6.0 商户外部交易号幂等；v1.7.0 单据类型
+ALTER TABLE trade_order ADD COLUMN IF NOT EXISTS out_trade_no VARCHAR(64);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_order_out_trade ON trade_order (merchant_id, out_trade_no);
+ALTER TABLE trade_order ADD COLUMN IF NOT EXISTS biz_type VARCHAR(16) NOT NULL DEFAULT 'TRADE';  -- TRADE/TOPUP/WITHDRAW
 -- tcc_branch_log / idempotent_record 结构同 C.3（idempotent biz_type=REFUND_MARK）
 ```
 
@@ -1140,6 +1175,8 @@ CREATE TABLE IF NOT EXISTS payment (
 );
 CREATE INDEX IF NOT EXISTS idx_payment_xid ON payment (xid);
 CREATE INDEX IF NOT EXISTS idx_payment_order ON payment (order_id);
+-- v1.7.0 单据类型：TRADE 商户交易（默认）/ TOPUP 充值 / WITHDRAW 提现
+ALTER TABLE payment ADD COLUMN IF NOT EXISTS biz_type VARCHAR(16) NOT NULL DEFAULT 'TRADE';
 CREATE TABLE IF NOT EXISTS refund_record (
     id         VARCHAR(32) PRIMARY KEY,       -- "R"+seq_refund
     payment_id VARCHAR(32) NOT NULL,
@@ -1319,7 +1356,7 @@ CREATE TABLE IF NOT EXISTS recon_report (
 | closeOrder | orderId | OrderDTO | A0409 非 CREATED | CAS |
 | refundMark | orderId, amount, bizNo | OrderDTO | A0409 未支付；B0001 超退 | (REFUND_MARK,bizNo) |
 
-`OrderDTO`：id/merchantId/merchantName/subject/amount/status/paymentId/refundedAmount/createdAt/paidAt/closedAt。
+`OrderDTO`：id/merchantId/merchantName/outTradeNo/bizType/subject/amount/status/paymentId/refundedAmount/createdAt/paidAt/closedAt。
 
 ### D.5 PaymentFacade
 

@@ -47,16 +47,37 @@ public class TradeService {
         if (!"ACTIVE".equals(merchant.getStatus())) {
             throw new BizException(ResultCode.BIZ_ERROR, "商户已冻结: " + merchant.getId());
         }
+        String outTradeNo = request.getOutTradeNo();
+        if (outTradeNo != null && outTradeNo.isBlank()) {
+            outTradeNo = null;
+        }
+        if (outTradeNo != null) {
+            OrderDO existing = orderMapper.selectByOutTradeNo(merchant.getId(), outTradeNo);
+            if (existing != null) {
+                log.info("下单幂等命中 merchantId={} outTradeNo={} orderId={}", merchant.getId(), outTradeNo, existing.getId());
+                return OrderConverter.toDTO(existing);
+            }
+        }
         OrderDO order = new OrderDO();
         order.setId("O" + orderMapper.nextId());
         order.setMerchantId(merchant.getId());
         order.setMerchantName(merchant.getName());
+        order.setOutTradeNo(outTradeNo);
+        order.setBizType(request.getBizType() == null || request.getBizType().isBlank() ? "TRADE" : request.getBizType());
         order.setSubject(subject);
         order.setAmount(request.getAmount());
         order.setStatus("CREATED");
         order.setRefundedAmount(0L);
         order.setCreatedAt(System.currentTimeMillis());
-        orderMapper.insert(order);
+        try {
+            orderMapper.insert(order);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            OrderDO existing = orderMapper.selectByOutTradeNo(merchant.getId(), outTradeNo);
+            if (existing == null) {
+                throw e;
+            }
+            return OrderConverter.toDTO(existing);
+        }
         log.info("订单创建 orderId={} merchantId={} amount={} subject={}", order.getId(), merchant.getId(), request.getAmount(), subject);
         return OrderConverter.toDTO(order);
     }
