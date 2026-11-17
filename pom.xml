@@ -22,7 +22,6 @@
         <module>tcc-core</module>
         <module>payment-common</module>
         <module>payment-facade</module>
-        <module>payment-dtx</module>
         <module>payment-registry</module>
         <module>payment-member</module>
         <module>payment-account</module>
@@ -69,11 +68,6 @@
             <dependency>
                 <groupId>com.qoder.payment</groupId>
                 <artifactId>tcc-core</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.qoder.payment</groupId>
-                <artifactId>payment-dtx</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

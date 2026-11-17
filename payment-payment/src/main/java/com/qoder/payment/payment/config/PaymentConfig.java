@@ -1,7 +1,7 @@
 package com.qoder.payment.payment.config;
 
-import com.qoder.payment.dtx.TccCoordinator;
 import com.qoder.payment.payment.service.PaymentCompletionListener;
+import com.qoder.tcc.TccCoordinator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,7 +14,7 @@ public class PaymentConfig {
     @Bean
     public TccCoordinator tccCoordinator(JdbcTemplate jdbc, PlatformTransactionManager txManager,
                                          TccParticipants participants, PaymentCompletionListener listener) {
-        return new TccCoordinator(jdbc, txManager, participants.asMap(), listener);
+        return new TccCoordinator(jdbc, txManager, DubboTccParticipant.wrap(participants.asMap()), listener);
     }
 
     @Bean

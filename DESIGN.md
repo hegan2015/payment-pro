@@ -140,14 +140,13 @@
 
 ## 3. Maven 工程结构
 
-### 3.1 模块清单（17 个）
+### 3.1 模块清单（16 个）
 
 ```
 payment-pro (parent, pom)
 ├── tcc-core            通用 TCC 组件（零业务耦合）：协调器/参与者模板/幂等模板/补偿/自动装配
-├── payment-common      基础库：Result/ResultCode/BizException/MoneyUtil/TraceFilter
+├── payment-common      基础库：Result/ResultCode/BizException/MoneyUtil/TraceFilter（含 TccException 边界转码）
 ├── payment-facade      契约库：全部 Dubbo 接口 + DTO + TCC 上下文 + HealthFacade(Impl)
-├── payment-dtx         TCC 薄适配层：tcc-core ↔ BizException/Dubbo 参与者契约桥接
 ├── payment-registry    内嵌 ZooKeeper 进程
 ├── payment-member      ┐
 ├── payment-account     │
@@ -166,14 +165,15 @@ payment-pro (parent, pom)
 ### 3.2 依赖规则
 
 ```
-业务域 ──▶ payment-facade ──▶ payment-common
-业务域 ──▶ payment-dtx ─────▶ tcc-core + payment-facade / payment-common
+业务域 ──▶ payment-facade ──▶ payment-common ──▶ tcc-core
+业务域 ──▶ tcc-core（直接依赖，TccAutoConfiguration 自动装配模板 Bean）
+payment-facade ──▶ tcc-core（TCC 契约直接使用组件 TccBranchRequest DTO）
 tcc-core ──▶ 仅 spring-jdbc / spring-tx / spring-boot-autoconfigure / jackson / slf4j / lombok(provided)
 ```
 
 - **facade 只含接口与 DTO**，消费方只依赖契约，不依赖实现（Dubbo 的标准工程实践）。
 - **tcc-core 是零业务耦合的通用组件**：包名 `com.qoder.tcc`，不依赖 payment-common/payment-facade/Dubbo；异常用自带 `TccException`（CONFLICT/BIZ_ERROR 两类），参与者 SPI `TccParticipant` 传输无关（方法直接抛异常），通过 `TccAutoConfiguration`（AutoConfiguration.imports 注册）自动装配。任何 Spring Boot + JDBC 项目引入即可获得 TCC 与幂等能力（接入方式见 §6.7）。
-- **payment-dtx 是薄适配层**：`DubboTccParticipant` 把 facade 的 `TccParticipantFacade`（Result.orThrow）桥接到组件 SPI；`TccCoordinator`/`TccParticipantTemplate`/`IdempotentTemplate` 三个同名薄包装继承组件类，仅做 DTO 转换与 `TccException ↔ BizException` 错误码映射（CONFLICT→A0409、BIZ_ERROR→B0001），事务语义全部在 tcc-core 内。
+- **业务模块直接依赖 tcc-core，无中间适配模块**（2026-11-17 移除 payment-dtx）：协调器/参与者模板/幂等模板一律直接用组件类；`TccException → Result` 错误码映射（CONFLICT→A0409、BIZ_ERROR→B0001）统一下沉到 `FacadeSupport`（payment-common）Dubbo 边界；仅存的 Dubbo 桥接 `DubboTccParticipant`（facade Result.orThrow → 组件 SPI，组合而非继承）放在协调器宿主 payment-payment 的 config 包。
 - **版本集中管理**：parent 继承 `spring-boot-starter-parent:3.2.5`，import `dubbo-bom:3.2.14`，统一 MyBatis starter 3.0.3、ZooKeeper 3.8.4；内部模块版本走 `dependencyManagement`。
 - **日志冲突治理**：dubbo-zookeeper-curator5 与 zookeeper 依赖显式 exclusion 掉 log4j/reload4j/slf4j-log4j12/logback（ZK 侧），全系统统一 Logback。
 - **构建**：Maven Wrapper（`./mvnw`），Java 17（`maven.compiler.release=17`），boot 插件 repackage 成可执行 fat jar。
@@ -299,7 +299,7 @@ transfer_record    -- 转账凭证：biz_no PK（过账幂等兜底）、lines J
 
 ```
 payment-payment（协调器宿主）
-  TccCoordinator（tcc-core 组件，经 payment-dtx 薄适配装配）
+  TccCoordinator（tcc-core 组件，PaymentConfig 直接装配）
        │ ── dtx_transaction / dtx_branch（本地库）
        │ Dubbo: TccParticipantFacade.tryAction/confirm/cancel
        │ （DubboTccParticipant 桥接为组件 SPI TccParticipant）
@@ -308,7 +308,7 @@ payment-payment（协调器宿主）
        └──▶ trade 参与者（订单预留/标记已付/释放）
 ```
 
-参与者通过 `TccParticipants` 配置注册为 `Map<String, TccParticipantFacade>`（key=participant 名），payment-dtx 适配层经 `DubboTccParticipant.wrap()` 转为组件 SPI Map 注入协调器，协调器按分支日志中的名字路由——新增参与者只需注册 bean + registerBranch，协调器零改动。
+参与者通过 `TccParticipants` 配置注册为 `Map<String, TccParticipantFacade>`（key=participant 名），payment-payment 的 `DubboTccParticipant.wrap()` 转为组件 SPI Map 注入协调器，协调器按分支日志中的名字路由——新增参与者只需注册 bean + registerBranch，协调器零改动。
 
 ### 6.2 全局事务状态机
 
@@ -411,7 +411,7 @@ Confirm 无 Try 记录  → 抛错（不允许凭空提交）
 
 ### 6.7 组件化：tcc-core 通用组件与接入方式
 
-TCC 框架已从 payment-dtx 抽取为**零业务耦合**的通用组件 `tcc-core`（包名 `com.qoder.tcc`），事务语义、重试参数、表结构、日志与抽取前完全一致：
+TCC 框架为**零业务耦合**的通用组件 `tcc-core`（包名 `com.qoder.tcc`），事务语义、重试参数、表结构、日志与组件化前完全一致。演进：先从 payment-dtx 抽取为通用组件（保留薄适配层），2026-11-17 进一步**整体移除 payment-dtx 模块**，业务模块直接依赖 tcc-core：
 
 ```
 tcc-core（com.qoder.tcc，13 个类）
@@ -425,15 +425,15 @@ tcc-core（com.qoder.tcc，13 个类）
 ├── TccContextUtil          上下文 JSON 序列化
 ├── TccSchema               建表 DDL 常量（幂等 IF NOT EXISTS，不破坏既有数据）
 ├── GlobalStatus / BranchStatus / ParticipantStatus   状态枚举
-└── TccAutoConfiguration    自动装配（META-INF/spring/AutoConfiguration.imports 注册）
+└── TccAutoConfiguration    自动装配（AutoConfiguration.imports 注册；@ConditionalOnSingleCandidate(DataSource)，无数据源应用自动跳过）
 ```
 
 **三处业务耦合的替代**：
-1. `BizException/ResultCode` → 组件自带 `TccException`（CONFLICT/BIZ_ERROR 语义等价）；
-2. facade 的 `TccBranchRequest` → 组件同名通用 DTO（facade DTO 保留不动，Dubbo 线上契约不变）；
-3. `TccParticipantFacade`（Result + orThrow）→ 传输无关 SPI `TccParticipant`（直接抛异常）。
+1. `BizException/ResultCode` → 组件自带 `TccException`（CONFLICT/BIZ_ERROR 语义等价），`TccException → Result` 错误码映射（CONFLICT→A0409、BIZ_ERROR→B0001，其余码透传）统一在 `FacadeSupport`（payment-common）Dubbo 边界完成，对外错误码与组件化前完全一致；
+2. facade 的 `TccBranchRequest` → **契约直接使用组件通用 DTO**（`com.qoder.tcc.TccBranchRequest`，Serializable，字段同构，facade 侧旧 DTO 已删除，无 DTO 转换层）；
+3. `TccParticipantFacade`（Result + orThrow）→ 传输无关 SPI `TccParticipant`（直接抛异常），桥接类 `DubboTccParticipant` 位于协调器宿主 payment-payment 的 config 包（组合实现 SPI，非继承）。
 
-**payment-dtx 薄适配层**（仅 7 个类）：`DubboTccParticipant`（facade→SPI 桥接 + DTO 转换）、`TccExceptions`（TccException↔BizException 错误码映射）、`TccRequests`（双向 DTO 转换）、三个继承组件类的同名薄包装（`TccCoordinator`/`TccParticipantTemplate`/`IdempotentTemplate`，仅异常转译与 facade DTO 重载）、`DtxAutoConfiguration`（`before = TccAutoConfiguration`，适配 Bean 先注册使组件默认 Bean 按类型退让）。六个使用模块的 `TccContextUtil`/`IdempotentTemplate`/`TccCompletionListener` 等 import 已直接切到 `com.qoder.tcc`。
+**直依赖后的装配**：六个使用模块（payment/accounting/channel/trade/settle/notify）pom 直接依赖 tcc-core；`TccParticipantTemplate`/`IdempotentTemplate` Bean 由组件 `TccAutoConfiguration` 自动装配（不再有适配层 Bean 覆盖）；协调器由 `PaymentConfig` 直接 `new TccCoordinator(jdbc, txManager, DubboTccParticipant.wrap(participants.asMap()), listener)`。原 payment-dtx 的 7 个类中，3 个继承薄包装与 `DtxAutoConfiguration`/`TccExceptions`/`TccRequests` 随模块删除，仅 `DubboTccParticipant` 迁入 payment-payment。
 
 **其他项目接入方式**（任意 Spring Boot 3 + JDBC 项目，无需 Dubbo/ZooKeeper）：
 
@@ -918,10 +918,10 @@ JAVA_HOME 探测（corretto-18 优先，回退 java_home -v17）
 
 | 机制 | 位置 |
 |---|---|
-| TCC 协调器 | tcc-core/.../TccCoordinator.java（payment-dtx 同名薄包装做异常桥接） |
+| TCC 协调器 | tcc-core/.../TccCoordinator.java（PaymentConfig 直接装配） |
 | TCC 参与者模板 | tcc-core/.../TccParticipantTemplate.java |
 | 幂等模板 | tcc-core/.../IdempotentTemplate.java |
-| TCC Dubbo 适配 | payment-dtx/.../DubboTccParticipant.java、TccExceptions.java、TccRequests.java |
+| TCC Dubbo 桥接 | payment-payment/.../config/DubboTccParticipant.java；错误码映射在 payment-common/.../FacadeSupport.java |
 | 支付编排 | payment-payment/.../service/PaymentService.java |
 | 事务性终态+outbox | payment-payment/.../service/PaymentCompletionListener.java |
 | outbox 投递 | payment-payment/.../service/OutboxDispatcher.java |
@@ -1378,7 +1378,7 @@ public String registerBranch(String xid, String participant, String action, Obje
 ```
 
 **为什么这样写**：
-- `begin` 用 `(biz_type,biz_no)` 唯一约束做兜底——即使上层幂等失效，同一支付单也开不出第二个全局事务（组件抛 CONFLICT，payment-dtx 适配层映射为 A0409）。
+- `begin` 用 `(biz_type,biz_no)` 唯一约束做兜底——即使上层幂等失效，同一支付单也开不出第二个全局事务（组件抛 CONFLICT，FacadeSupport 边界映射为 A0409）。
 - 分支 `context` 序列化成 JSON **落库**而非放内存：协调器重启后 `recover()` 能从库里读出原样上下文重放二阶段，这是崩溃恢复的前提。
 - `seq` 决定 Try/Confirm/Cancel 的执行顺序，注册顺序即驱动顺序。
 
@@ -1400,7 +1400,7 @@ public void tryAll(String xid) {
     if (failReason != null) {
         jdbc.update("UPDATE dtx_transaction SET status='CANCELLING', fail_reason=? ...", ...);
         driveCancel(xid);                                     // :79 立即同步回滚
-        throw new TccException(TccException.BIZ_ERROR, failReason);  // :80 抛给调用方（适配层转 B0001）
+        throw new TccException(TccException.BIZ_ERROR, failReason);  // :80 抛给调用方（FacadeSupport 转 B0001）
     }
 }
 ```

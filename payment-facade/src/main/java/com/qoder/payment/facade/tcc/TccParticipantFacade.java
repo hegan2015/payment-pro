@@ -1,6 +1,7 @@
 package com.qoder.payment.facade.tcc;
 
 import com.qoder.payment.common.result.Result;
+import com.qoder.tcc.TccBranchRequest;
 
 /**
  * TCC 参与者统一接口。每个参与域以 Dubbo group 区分暴露，

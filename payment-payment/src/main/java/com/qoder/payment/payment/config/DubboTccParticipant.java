@@ -1,15 +1,16 @@
-package com.qoder.payment.dtx;
+package com.qoder.payment.payment.config;
 
 import com.qoder.payment.common.exception.BizException;
 import com.qoder.payment.facade.tcc.TccParticipantFacade;
 import com.qoder.tcc.TccBranchRequest;
+import com.qoder.tcc.TccException;
 import com.qoder.tcc.TccParticipant;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Dubbo 参与者适配：把线上契约 {@link TccParticipantFacade}（Result 包装 + orThrow）
+ * Dubbo 参与者桥接：把线上契约 {@link TccParticipantFacade}（Result 包装 + orThrow）
  * 桥接为 tcc-core 传输无关 SPI {@link TccParticipant}（直接抛异常）。
  *
  * <p>语义等价：Result 失败经 orThrow 抛 BizException，此处转为 TccException
@@ -32,24 +33,24 @@ public class DubboTccParticipant implements TccParticipant {
 
     @Override
     public void tryAction(TccBranchRequest request) {
-        invoke(() -> facade.tryAction(TccRequests.toFacade(request)).orThrow());
+        invoke(() -> facade.tryAction(request).orThrow());
     }
 
     @Override
     public void confirm(TccBranchRequest request) {
-        invoke(() -> facade.confirm(TccRequests.toFacade(request)).orThrow());
+        invoke(() -> facade.confirm(request).orThrow());
     }
 
     @Override
     public void cancel(TccBranchRequest request) {
-        invoke(() -> facade.cancel(TccRequests.toFacade(request)).orThrow());
+        invoke(() -> facade.cancel(request).orThrow());
     }
 
     private static void invoke(Runnable action) {
         try {
             action.run();
         } catch (BizException e) {
-            throw TccExceptions.fromBiz(e);
+            throw new TccException(e.getCode(), e.getMessage());
         }
     }
 }
