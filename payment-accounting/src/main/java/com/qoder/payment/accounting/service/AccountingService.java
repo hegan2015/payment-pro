@@ -9,6 +9,7 @@ import com.qoder.payment.accounting.mapper.TransferMapper;
 import com.qoder.payment.common.exception.BizException;
 import com.qoder.payment.common.result.ResultCode;
 import com.qoder.payment.common.util.MoneyUtil;
+import com.qoder.payment.facade.accounting.PostRequest;
 import com.qoder.tcc.IdempotentTemplate;
 import com.qoder.tcc.TccContextUtil;
 import com.qoder.payment.facade.account.AccountStatusDTO;
@@ -69,6 +70,18 @@ public class AccountingService {
             post(bizNo, lines, "充值", null, false);
             log.info("充值过账 accountId={} amount={} bizNo={}", request.getAccountId(), request.getAmount(), bizNo);
             return balanceOf(request.getAccountId());
+        });
+    }
+
+    public void postIdempotent(PostRequest request) {
+        String bizNo = request.getBizNo();
+        if (bizNo == null || bizNo.isBlank()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "bizNo 必填");
+        }
+        idempotentTemplate.execute("POST", bizNo, Void.class, () -> {
+            post(bizNo, request.getLines(), request.getSubject(), request.getRefId(), false);
+            log.info("通用过账 bizNo={} subject={} lines={}", bizNo, request.getSubject(), request.getLines().size());
+            return null;
         });
     }
 

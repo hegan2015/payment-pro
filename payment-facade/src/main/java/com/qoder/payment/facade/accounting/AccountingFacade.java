@@ -14,6 +14,9 @@ public interface AccountingFacade {
     /** 充值：外部现金入户。bizNo 幂等，返回充值后余额。 */
     Result<Long> topup(TopupRequest request);
 
+    /** 通用过账（转账/提现等）：bizNo 幂等，借贷平衡校验。 */
+    Result<Void> post(PostRequest request);
+
     Result<Long> balance(String accountId);
 
     Result<Map<String, Long>> balances(List<String> accountIds);

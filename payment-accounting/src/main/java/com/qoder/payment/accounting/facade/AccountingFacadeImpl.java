@@ -5,6 +5,7 @@ import com.qoder.payment.common.result.FacadeSupport;
 import com.qoder.payment.common.result.Result;
 import com.qoder.payment.facade.accounting.AccountingFacade;
 import com.qoder.payment.facade.accounting.EntryDTO;
+import com.qoder.payment.facade.accounting.PostRequest;
 import com.qoder.payment.facade.accounting.TopupRequest;
 import com.qoder.payment.facade.accounting.TransferDTO;
 import com.qoder.payment.facade.accounting.TrialDTO;
@@ -23,6 +24,14 @@ public class AccountingFacadeImpl implements AccountingFacade {
     @Override
     public Result<Long> topup(TopupRequest request) {
         return FacadeSupport.execute(() -> accountingService.topup(request));
+    }
+
+    @Override
+    public Result<Void> post(PostRequest request) {
+        return FacadeSupport.execute(() -> {
+            accountingService.postIdempotent(request);
+            return null;
+        });
     }
 
     @Override

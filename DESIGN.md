@@ -2,7 +2,8 @@
 
 > 参考支付宝领域划分的工业级支付系统
 > Spring Boot 3.2 + Apache Dubbo 3.2 + 自研 XTS 风格 TCC + 事务性 Outbox
-> 版本：1.2.0 ｜ 文档日期：2026-11-17
+> 版本：1.3.0 ｜ 文档日期：2026-11-17
+> v1.3 更新：HTTPS 8443 双连接器 + 自签证书自动生成；OpenAPI 扩展账户/退款/查询端点与通用幂等过账，支撑 ride-pro 双账本镜像接入（详见 §16）
 > v1.2 更新：TCC 抽成零业务耦合通用组件 tcc-core（com.qoder.tcc，自动装配）；随后整体移除 payment-dtx 模块，业务模块直依赖 tcc-core（16 模块），错误码映射下沉 FacadeSupport，详见 §3.2 与 §6.7
 > v1.1 细化：新增附录 C 字段级数据字典、附录 D 接口契约清单、附录 E 核心代码走读、附录 F 异常与边界场景全集
 
@@ -25,6 +26,7 @@
 13. [可观测性与运维](#13-可观测性与运维)
 14. [测试与验证体系](#14-测试与验证体系)
 15. [已知边界与演进方向](#15-已知边界与演进方向)
+16. [OpenAPI 商户接入扩展（ride-pro 双账本对接）](#16-openapi-商户接入扩展v130ride-pro-双账本对接)
 
 **深度附录（v1.1 细化）**
 
@@ -914,6 +916,34 @@ JAVA_HOME 探测（corretto-18 优先，回退 java_home -v17）
 这些边界不影响当前系统的正确性论证：所有资金一致性机制（TCC、幂等、outbox、复式记账、对账）都是生产同构的，替换的只是基础设施载体。
 
 ---
+
+## 16. OpenAPI 商户接入扩展（v1.3.0，ride-pro 双账本对接）
+
+### 16.1 HTTPS 8443 双连接器
+
+网关在 HTTP 8080（控制台/既有脚本不变）之外新增 HTTPS 8443：`HttpsConfig`（WebServerFactoryCustomizer 附加 Tomcat 连接器 + SSLHostConfig/PKCS12）。run.sh 首次启动自动 keytool 生成自签证书 `config/payment-pro.p12`（RSA2048，CN=localhost，SAN=dns:localhost,ip:127.0.0.1，3650 天）并导出公钥 `config/payment-pro-cert.pem` 供接入方显式信任；keystore 缺失时跳过 HTTPS 并告警，不影响 HTTP。两文件均 gitignore。
+
+### 16.2 OpenAPI 新增端点（appId + HMAC-SHA256 验签，timestamp ±5min）
+
+| 端点 | 语义 |
+|---|---|
+| account.open | 商户侧用户开户：name+type 幂等（查会员→缺则建→查账户→缺则开），返回 {memberId, accountId} |
+| account.topup | 充值（AccountingFacade.topup，bizNo 幂等） |
+| account.transfer | 通用两腿划转（from D / to C） |
+| account.withdraw | 提现出金（D 账户 / C SYS_CASH） |
+| account.balance | 余额查询（裸数字） |
+| trade.refund | 标准退款（paymentId + amount + outRefundNo） |
+| trade.query | 订单+支付单查询（商户 PULL 补查对账） |
+
+trade.pay 增加可选 `callbackUrl`（异步通知投递地址）。账务侧新增 `AccountingFacade.post(PostRequest)`：通用过账以 IdempotentTemplate("POST", bizNo) 包裹，保证 bizNo 幂等（post 本体仅转账记录防重）。
+
+### 16.3 ride-pro 双账本接入（对端视角）
+
+ride-pro 以商户身份接入（integrate-payment.sh 注册 name=ride-pro 的 MERCHANT）：本地钱包仍是资金权威，每笔资金操作同事务写镜像 outbox，单线程顺序投递——TOPUP→account.topup；PAY→trade.create+trade.pay(BALANCE)+商户→司机分成划转；REFUND→按本地借贷腿划转（司机追回+商户退乘客，**不走 trade.refund**，因打车退款含平台兜底语义）；WITHDRAW→account.withdraw。确定性 bizNo 幂等 + 退避重试 + DEAD 人工重放；payment-pro 宕机时 ride 本地资金流不受影响，恢复后镜像追平。支付手续费（fee-bps→SYS_FEE）为支付系统营收，ride 侧对账口径予以扣除。详见 ride-pro DESIGN.md §19。
+
+### 16.4 验证记录（2026-11-17）
+
+ride-pro `verify-integration.py` 15/15（充值/支付/部分退款/提现双账本增量一致、回调留痕、停 payment-pro 混沌本地不受影响+恢复追平、两边对账全过）；本系统回归 smoke-test.py 79/79、verify-pro.py 22/22，OpenAPI/HTTPS 扩展未破坏既有行为。
 
 ## 附录 A：关键代码索引
 

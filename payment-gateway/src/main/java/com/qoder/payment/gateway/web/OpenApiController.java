@@ -1,11 +1,21 @@
 package com.qoder.payment.gateway.web;
 
 import com.qoder.payment.common.exception.BizException;
+import com.qoder.payment.common.result.Result;
+import com.qoder.payment.facade.account.AccountDTO;
+import com.qoder.payment.facade.account.AccountFacade;
+import com.qoder.payment.facade.accounting.AccountingFacade;
+import com.qoder.payment.facade.accounting.PostRequest;
+import com.qoder.payment.facade.accounting.TopupRequest;
+import com.qoder.payment.facade.accounting.TransferLineDTO;
+import com.qoder.payment.facade.member.MemberCreateRequest;
 import com.qoder.payment.facade.member.MemberDTO;
 import com.qoder.payment.facade.member.MemberFacade;
 import com.qoder.payment.facade.payment.PayRequest;
 import com.qoder.payment.facade.payment.PaymentFacade;
+import com.qoder.payment.facade.payment.RefundRequest;
 import com.qoder.payment.facade.trade.OrderCreateRequest;
+import com.qoder.payment.facade.trade.OrderDTO;
 import com.qoder.payment.facade.trade.TradeFacade;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
@@ -19,6 +29,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -39,6 +51,12 @@ public class OpenApiController {
     @DubboReference
     private PaymentFacade paymentFacade;
 
+    @DubboReference
+    private AccountFacade accountFacade;
+
+    @DubboReference
+    private AccountingFacade accountingFacade;
+
     @PostMapping("/trade.create")
     public ResponseEntity<Object> tradeCreate(@RequestBody Map<String, Object> body) {
         MemberDTO merchant = verify(body);
@@ -58,7 +76,106 @@ public class OpenApiController {
         request.setAccountId(body.get("accountId") == null ? null : body.get("accountId").toString());
         request.setCardNo(body.get("cardNo") == null ? null : body.get("cardNo").toString());
         request.setRequestId(str(body, "outTradeNo"));
+        request.setCallbackUrl(body.get("callbackUrl") == null ? null : body.get("callbackUrl").toString());
         return GatewaySupport.of(paymentFacade.pay(request));
+    }
+
+    /** 商户侧用户/司机开户（name 幂等）：返回会员与账户 ID，供调用方持久化映射。 */
+    @PostMapping("/account.open")
+    public ResponseEntity<Object> accountOpen(@RequestBody Map<String, Object> body) {
+        verify(body);
+        String name = str(body, "name");
+        String type = body.get("type") == null ? "USER" : body.get("type").toString();
+        MemberDTO member = memberFacade.list().orThrow().stream()
+                .filter(m -> name.equals(m.getName()) && type.equals(m.getType()))
+                .findFirst().orElse(null);
+        if (member == null) {
+            MemberCreateRequest request = new MemberCreateRequest();
+            request.setName(name);
+            request.setType(type);
+            member = memberFacade.create(request).orThrow();
+        }
+        List<AccountDTO> accounts = accountFacade.list(member.getId()).orThrow();
+        AccountDTO account = accounts.isEmpty()
+                ? accountFacade.create(member.getId()).orThrow()
+                : accounts.get(0);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("memberId", member.getId());
+        result.put("accountId", account.getId());
+        return GatewaySupport.of(Result.ok(result));
+    }
+
+    @PostMapping("/account.topup")
+    public ResponseEntity<Object> accountTopup(@RequestBody Map<String, Object> body) {
+        verify(body);
+        TopupRequest request = new TopupRequest();
+        request.setAccountId(str(body, "accountId"));
+        request.setAmount(longOf(body.get("amount")));
+        request.setBizNo(str(body, "bizNo"));
+        return GatewaySupport.of(accountingFacade.topup(request));
+    }
+
+    @PostMapping("/account.transfer")
+    public ResponseEntity<Object> accountTransfer(@RequestBody Map<String, Object> body) {
+        verify(body);
+        long amount = longOf(body.get("amount"));
+        PostRequest request = new PostRequest();
+        request.setBizNo(str(body, "bizNo"));
+        request.setSubject(body.get("subject") == null ? "商户划转" : body.get("subject").toString());
+        request.setLines(List.of(
+                line(str(body, "fromAccountId"), "D", amount),
+                line(str(body, "toAccountId"), "C", amount)));
+        return GatewaySupport.of(accountingFacade.post(request));
+    }
+
+    /** 提现出金：账户扣款入 SYS_CASH（渠道清算），bizNo 幂等。 */
+    @PostMapping("/account.withdraw")
+    public ResponseEntity<Object> accountWithdraw(@RequestBody Map<String, Object> body) {
+        verify(body);
+        long amount = longOf(body.get("amount"));
+        PostRequest request = new PostRequest();
+        request.setBizNo(str(body, "bizNo"));
+        request.setSubject("提现出金");
+        request.setLines(List.of(
+                line(str(body, "accountId"), "D", amount),
+                line("SYS_CASH", "C", amount)));
+        return GatewaySupport.of(accountingFacade.post(request));
+    }
+
+    @PostMapping("/account.balance")
+    public ResponseEntity<Object> accountBalance(@RequestBody Map<String, Object> body) {
+        verify(body);
+        return GatewaySupport.of(accountingFacade.balance(str(body, "accountId")));
+    }
+
+    @PostMapping("/trade.refund")
+    public ResponseEntity<Object> tradeRefund(@RequestBody Map<String, Object> body) {
+        verify(body);
+        RefundRequest request = new RefundRequest();
+        request.setAmount(longOf(body.get("amount")));
+        request.setRequestId(str(body, "outRefundNo"));
+        return GatewaySupport.of(paymentFacade.refund(str(body, "paymentId"), request));
+    }
+
+    /** 订单+支付单查询：商户对账 PULL 补查。 */
+    @PostMapping("/trade.query")
+    public ResponseEntity<Object> tradeQuery(@RequestBody Map<String, Object> body) {
+        verify(body);
+        OrderDTO order = tradeFacade.getOrder(str(body, "orderId")).orThrow();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order", order);
+        if (order.getPaymentId() != null) {
+            result.put("payment", paymentFacade.getPayment(order.getPaymentId()).orThrow());
+        }
+        return GatewaySupport.of(Result.ok(result));
+    }
+
+    private static TransferLineDTO line(String accountId, String dir, long amount) {
+        TransferLineDTO line = new TransferLineDTO();
+        line.setAccountId(accountId);
+        line.setDir(dir);
+        line.setAmount(amount);
+        return line;
     }
 
     private MemberDTO verify(Map<String, Object> body) {

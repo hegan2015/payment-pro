@@ -10,7 +10,16 @@ else
 fi
 echo "JAVA_HOME=$JAVA_HOME"
 
-mkdir -p run logs data
+mkdir -p run logs data config
+
+if [ ! -f config/payment-pro.p12 ]; then
+  echo "==> 生成 OpenAPI 自签证书（HTTPS ${TLS_PORT:-8443}）..."
+  "$JAVA_HOME/bin/keytool" -genkeypair -alias payment-pro -keyalg RSA -keysize 2048 \
+    -storetype PKCS12 -keystore config/payment-pro.p12 -storepass changeit \
+    -dname "CN=localhost" -ext "SAN=dns:localhost,ip:127.0.0.1" -validity 3650 >/dev/null 2>&1
+  "$JAVA_HOME/bin/keytool" -exportcert -rfc -alias payment-pro \
+    -keystore config/payment-pro.p12 -storepass changeit -file config/payment-pro-cert.pem >/dev/null 2>&1
+fi
 
 if [ "$1" != "--no-build" ]; then
   echo "==> 编译打包（Maven Wrapper）..."
