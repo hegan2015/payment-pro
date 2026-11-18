@@ -84,7 +84,7 @@
 <main>
   <section id="tab-arch">
     <div class="card"><h2>服务拓扑（健康检查）</h2><div class="grid" id="svcGrid"></div>
-      <div class="hint">网关统一入口 :8080；各域独立进程、独立 H2 存储，Dubbo RPC 通信（ZooKeeper 注册中心）；支付核心以 XTS 风格 TCC 协调跨域事务，事务性 outbox 可靠投递 + 定时异步补偿，全链路幂等（空回滚 / 防悬挂）。</div></div>
+      <div class="hint">网关统一入口 :8080；各域独立进程、独立数据库（本地 H2 / Docker MySQL pp_* 多库），Dubbo RPC 通信（ZooKeeper 注册中心）；支付核心以 XTS 风格 TCC 协调跨域事务，事务性 outbox 可靠投递（Docker 模式 RocketMQ 主投递 + 轮询兜底）+ 定时异步补偿，全链路幂等（空回滚 / 防悬挂）。</div></div>
     <div class="card"><h2>账务试算平衡</h2><div id="trialBox" class="summary"></div></div>
   </section>
 

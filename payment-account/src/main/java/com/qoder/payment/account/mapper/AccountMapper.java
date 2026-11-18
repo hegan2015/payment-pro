@@ -12,7 +12,7 @@ import java.util.List;
 @Mapper
 public interface AccountMapper {
 
-    @Select("SELECT NEXT VALUE FOR seq_account")
+    @Select("SELECT next_value_for('seq_account')")
     long nextId();
 
     @Insert("INSERT INTO account(id,member_id,member_name,type,status,created_at) "

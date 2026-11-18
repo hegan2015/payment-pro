@@ -12,7 +12,7 @@ import java.util.List;
 @Mapper
 public interface MemberMapper {
 
-    @Select("SELECT NEXT VALUE FOR seq_member")
+    @Select("SELECT next_value_for('seq_member')")
     long nextId();
 
     @Insert("INSERT INTO member(id,name,type,status,app_id,app_secret,created_at) "

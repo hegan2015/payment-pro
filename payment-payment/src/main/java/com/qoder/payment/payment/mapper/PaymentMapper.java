@@ -12,7 +12,7 @@ import java.util.List;
 @Mapper
 public interface PaymentMapper {
 
-    @Select("SELECT NEXT VALUE FOR seq_payment")
+    @Select("SELECT next_value_for('seq_payment')")
     long nextId();
 
     @Insert("INSERT INTO payment(id,order_id,merchant_id,biz_type,method,payer_account_id,card_no,merchant_account_id,amount,fee,status,"

@@ -1,5 +1,6 @@
 CREATE SEQUENCE IF NOT EXISTS seq_payment START WITH 1;
 CREATE SEQUENCE IF NOT EXISTS seq_refund START WITH 1;
+CREATE ALIAS IF NOT EXISTS next_value_for FOR "com.qoder.payment.common.db.H2Sequence.next";
 
 CREATE TABLE IF NOT EXISTS payment (
     id                 VARCHAR(32) PRIMARY KEY,

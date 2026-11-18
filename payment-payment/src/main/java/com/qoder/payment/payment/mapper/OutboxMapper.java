@@ -13,12 +13,16 @@ import java.util.List;
 public interface OutboxMapper {
 
     @Insert("INSERT INTO outbox(event,biz_id,payload,status,attempts,next_retry_at,created_at) "
-            + "VALUES(#{event},#{bizId},#{payload},'PENDING',0,0,#{createdAt})")
+            + "VALUES(#{event},#{bizId},#{payload},'PENDING',0,#{nextRetryAt},#{createdAt})")
     int insert(@Param("event") String event, @Param("bizId") String bizId,
-               @Param("payload") String payload, @Param("createdAt") long createdAt);
+               @Param("payload") String payload, @Param("nextRetryAt") long nextRetryAt,
+               @Param("createdAt") long createdAt);
 
     @Select("SELECT * FROM outbox WHERE status='PENDING' AND next_retry_at <= #{now} ORDER BY id LIMIT #{limit}")
     List<OutboxDO> selectPending(@Param("now") long now, @Param("limit") int limit);
+
+    @Select("SELECT * FROM outbox WHERE event=#{event} AND biz_id=#{bizId} ORDER BY id DESC LIMIT 1")
+    OutboxDO selectByEventBizId(@Param("event") String event, @Param("bizId") String bizId);
 
     @Update("UPDATE outbox SET status='DELIVERED' WHERE id=#{id}")
     int markDelivered(Long id);

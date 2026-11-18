@@ -20,6 +20,7 @@ import com.qoder.payment.facade.trade.OrderDTO;
 import com.qoder.payment.facade.trade.TradeFacade;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -57,6 +58,9 @@ public class OpenApiController {
 
     @DubboReference
     private AccountingFacade accountingFacade;
+
+    @Autowired
+    private MerchantCache merchantCache;
 
     @PostMapping("/trade.create")
     public ResponseEntity<Object> tradeCreate(@RequestBody Map<String, Object> body) {
@@ -216,7 +220,7 @@ public class OpenApiController {
         if (Math.abs(System.currentTimeMillis() - timestamp) > TIMESTAMP_TOLERANCE_MS) {
             throw new BizException("A0400", "timestamp 超出 5 分钟有效期");
         }
-        MemberDTO merchant = memberFacade.getByAppId(appId).orThrow();
+        MemberDTO merchant = merchantCache.get(appId, () -> memberFacade.getByAppId(appId).orThrow());
         Map<String, Object> params = new TreeMap<>(body);
         params.remove("sign");
         StringBuilder sb = new StringBuilder();

@@ -14,6 +14,7 @@ import uuid
 BASE = "http://127.0.0.1:8080"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SUFFIX = uuid.uuid4().hex[:6]
+PROFILE = os.environ.get("PP_PROFILE", "local")
 PASSED = 0
 FAILED = 0
 
@@ -91,8 +92,11 @@ def stop_svc(name):
 def start_svc(name):
     java = os.environ.get("JAVA_HOME", "/Users/hegan/Library/Java/JavaVirtualMachines/corretto-18.0.2/Contents/Home") + "/bin/java"
     log = open(os.path.join(ROOT, "logs", f"{name}.log"), "ab")
-    p = subprocess.Popen([java, "-jar", os.path.join(ROOT, f"payment-{name}", "target", f"payment-{name}-1.0.0.jar")],
-                         stdout=log, stderr=log, cwd=ROOT, start_new_session=True)
+    args = [java]
+    if PROFILE == "docker":
+        args.append("-Dspring.profiles.active=docker")
+    args += ["-jar", os.path.join(ROOT, f"payment-{name}", "target", f"payment-{name}-1.0.0.jar")]
+    p = subprocess.Popen(args, stdout=log, stderr=log, cwd=ROOT, start_new_session=True)
     with open(os.path.join(ROOT, "run", f"{name}.pid"), "w") as f:
         f.write(str(p.pid))
 
@@ -192,7 +196,11 @@ def main():
     before_bal = {a["id"]: bal(a["id"]) for a in ok("GET", "/api/accounts")}
     subprocess.run([os.path.join(ROOT, "stop.sh")], cwd=ROOT, check=True, capture_output=True)
     time.sleep(3)
-    subprocess.run([os.path.join(ROOT, "run.sh"), "--no-build"], cwd=ROOT, check=True, capture_output=True)
+    run_args = [os.path.join(ROOT, "run.sh")]
+    if PROFILE == "docker":
+        run_args.append("--docker")
+    run_args.append("--no-build")
+    subprocess.run(run_args, cwd=ROOT, check=True, capture_output=True)
     down = wait_health()
     check("重启后全部健康", not down, ",".join(down))
     check("会员数持久化", len(ok("GET", "/api/members")) == before_members)

@@ -11,7 +11,7 @@ import java.util.List;
 @Mapper
 public interface SettleRecordMapper {
 
-    @Select("SELECT NEXT VALUE FOR seq_settle")
+    @Select("SELECT next_value_for('seq_settle')")
     long nextId();
 
     @Insert("INSERT INTO settle_record(id,type,biz_id,payment_id,order_id,merchant_id,gross,fee,net,method,status,created_at) "

@@ -12,6 +12,17 @@ echo "JAVA_HOME=$JAVA_HOME"
 
 mkdir -p run logs data config
 
+PROFILE="local"
+if [ "$1" = "--docker" ]; then PROFILE="docker"; shift; fi
+if [ "$PROFILE" = "docker" ]; then
+  if [ -f "$HOME/.config/payment-pro/docker.env" ]; then
+    set -a; . "$HOME/.config/payment-pro/docker.env"; set +a
+  else
+    echo "!! 缺少 ~/.config/payment-pro/docker.env（MySQL 口令等），参见 config/docker.env.example"; exit 1
+  fi
+  echo "==> Docker profile：MySQL pp_* 多库 + Docker ZooKeeper 2181（跳过内嵌注册中心）"
+fi
+
 if [ ! -f config/payment-pro.p12 ]; then
   echo "==> 生成 OpenAPI 自签证书（HTTPS ${TLS_PORT:-8443}）..."
   "$JAVA_HOME/bin/keytool" -genkeypair -alias payment-pro -keyalg RSA -keysize 2048 \
@@ -32,7 +43,9 @@ start() {
     echo "==> $name 已在运行 (pid $(cat run/$name.pid))，跳过"
     return
   fi
-  nohup "$JAVA_HOME/bin/java" -jar "$module/target/$module-1.0.0.jar" > "logs/$name.log" 2>&1 &
+  local profileArg=""
+  [ "$PROFILE" = "docker" ] && profileArg="-Dspring.profiles.active=docker"
+  nohup "$JAVA_HOME/bin/java" $profileArg -jar "$module/target/$module-1.0.0.jar" > "logs/$name.log" 2>&1 &
   echo $! > "run/$name.pid"
   echo "==> 启动 $name (pid $!)"
 }
@@ -50,8 +63,19 @@ wait_http() {
   return 1
 }
 
-start registry payment-registry
-wait_http "http://127.0.0.1:${ZK_HTTP_PORT:-8092}/health" registry 60
+if [ "$PROFILE" = "docker" ]; then
+  echo "==> 探测 Docker ZooKeeper 127.0.0.1:2181..."
+  zk_ok=""
+  for ((i=0; i<30; i++)); do
+    if (exec 3<>/dev/tcp/127.0.0.1/2181) 2>/dev/null; then exec 3>&- 3<&-; zk_ok=1; break; fi
+    sleep 1
+  done
+  if [ -z "$zk_ok" ]; then echo "!! Docker ZooKeeper 2181 不可达，请先在 ops-pro 启动 zookeeper"; exit 1; fi
+  echo "==> Docker ZooKeeper 就绪"
+else
+  start registry payment-registry
+  wait_http "http://127.0.0.1:${ZK_HTTP_PORT:-8092}/health" registry 60
+fi
 
 for svc in member account accounting trade channel risk cashier payment settle notify recon; do
   start "$svc" "payment-$svc"

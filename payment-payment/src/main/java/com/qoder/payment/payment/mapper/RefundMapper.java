@@ -10,7 +10,7 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface RefundMapper {
 
-    @Select("SELECT NEXT VALUE FOR seq_refund")
+    @Select("SELECT next_value_for('seq_refund')")
     long nextId();
 
     @Insert("INSERT INTO refund_record(id,payment_id,amount,fee_refund,request_id,xid,status,biz_no,created_at) "

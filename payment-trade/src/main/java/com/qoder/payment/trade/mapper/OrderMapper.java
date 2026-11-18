@@ -12,7 +12,7 @@ import java.util.List;
 @Mapper
 public interface OrderMapper {
 
-    @Select("SELECT NEXT VALUE FOR seq_order")
+    @Select("SELECT next_value_for('seq_order')")
     long nextId();
 
     @Insert("INSERT INTO trade_order(id,merchant_id,merchant_name,out_trade_no,biz_type,subject,amount,status,payment_id,refunded_amount,created_at,paid_at,closed_at) "

@@ -12,7 +12,7 @@ import java.util.List;
 @Mapper
 public interface NotifyRecordMapper {
 
-    @Select("SELECT NEXT VALUE FOR seq_notify")
+    @Select("SELECT next_value_for('seq_notify')")
     long nextId();
 
     @Insert("INSERT INTO notify_record(id,event,biz_id,payload,callback_url,status,attempts,next_retry_at,last_error,created_at) "

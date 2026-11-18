@@ -2,7 +2,8 @@
 
 > 参考支付宝领域划分的工业级支付系统
 > Spring Boot 3.2 + Apache Dubbo 3.2 + 自研 XTS 风格 TCC + 事务性 Outbox
-> 版本：1.7.0 ｜ 文档日期：2026-11-17
+> 版本：1.8.0 ｜ 文档日期：2026-11-18
+> v1.8 更新：Docker 中间件集成（详见 §18）——双 profile（local 零依赖 / docker 共享栈）；MySQL 单实例多库 pp_*（序列函数同构）；RocketMQ PP_OUTBOX 主投递 + outbox 轮询兜底；Redis Lua 风控滑动窗口 + 网关商户缓存；Docker ZooKeeper 2181（跳过内嵌 registry）；run.sh --docker + 只读 H2→MySQL 迁移工具。smoke 79/79、verify-pro 22/22（docker）回归通过
 > v1.7 更新：充值/提现升级为资金单（fund.topup/fund.withdraw → 交易单+支付单，biz_type 区分 TRADE/TOPUP/WITHDRAW，SYS_FUND 系统资金商户、fee=0、BALANCE、完整 TCC）；账务流水跨账户全局分页查询（详见 §17）
 > v1.3 更新：HTTPS 8443 双连接器 + 自签证书自动生成；OpenAPI 扩展账户/退款/查询端点与通用幂等过账，支撑 ride-pro 双账本镜像接入（详见 §16）
 > v1.2 更新：TCC 抽成零业务耦合通用组件 tcc-core（com.qoder.tcc，自动装配）；随后整体移除 payment-dtx 模块，业务模块直依赖 tcc-core（16 模块），错误码映射下沉 FacadeSupport，详见 §3.2 与 §6.7
@@ -28,6 +29,8 @@
 14. [测试与验证体系](#14-测试与验证体系)
 15. [已知边界与演进方向](#15-已知边界与演进方向)
 16. [OpenAPI 商户接入扩展（ride-pro 双账本对接）](#16-openapi-商户接入扩展v130ride-pro-双账本对接)
+17. [资金单与全局分页流水（v1.7.0）](#17-资金单与全局分页流水v170)
+18. [Docker 中间件集成（MySQL/RocketMQ/Redis/ZooKeeper）](#18-docker-中间件集成mysqlrocketmqrediszookeeper)
 
 **深度附录（v1.1 细化）**
 
@@ -258,6 +261,8 @@ dubbo:
   - 注意：H2 2.x 要求相对路径显式 `./` 前缀（隐式相对路径报 90011）。
 - 建表：各域 `schema.sql`（`CREATE TABLE IF NOT EXISTS` + `CREATE SEQUENCE IF NOT EXISTS`），Spring SQL init 幂等执行，重启不丢数据。
 - ID 生成：数据库序列（`SELECT NEXT VALUE FOR seq_xxx`）+ 业务前缀（P 支付 / R 退款 / O 订单 / N 通知 / S 结算 / RC 对账 / E 分录 / T 全局事务），全局可读、无中心发号器依赖。
+
+> **Docker profile（MySQL）**：上述 H2 为 `local` 零依赖默认。`docker` profile 改用共享 MySQL 单实例多库 `pp_<domain>`（9 域），mapper SQL 不变——序列取号统一走 `SELECT next_value_for('seq_x')`：H2 由 `CREATE ALIAS` 桥接 `H2Sequence.next`，MySQL 由 `sequences` 表 + 存储函数（`LAST_INSERT_ID`）实现，两端同构。详见 [§18](#18-docker-中间件集成mysqlrocketmqrediszookeeper)。
 
 ### 5.2 支付核心库表（payment）
 
@@ -556,6 +561,8 @@ outbox 至少一次投递 → settle/notify 用 IdempotentTemplate 按 bizId 去
 - 成功 → DELIVERED；
 - 失败 → attempts+1，退避 `{3,6,12,24,48,96,192,384}s`，`MAX_ATTEMPTS=8`；
 - 耗尽 → **DEAD** + error 日志，等待对账暴露（对账"支付-清结算一致"项会精确报出缺失笔数）。
+
+> **Docker profile（RocketMQ 主投递）**：`docker` 模式下 outbox 行同事务落库后，`afterCommit` 同步 publish 到 `PP_OUTBOX`（tag=event、key=bizId），payment-payment 内的消费者收到即调用**同一套幂等 Dubbo 投递**（`deliverByEventBizId`）并 markDelivered——MQ 是主路径，3s 轮询退化为兜底。MQ 模式 insert 时 `next_retry_at=now+4000ms`（grace），使轮询只补 MQ 尚未送达的行；消费异常 `RECONSUME_LATER` 由 RocketMQ 重投。`local` 模式 MQ 关闭，纯轮询，零依赖。详见 [§18.3](#183-rocketmq-主投递--outbox-兜底)。
 
 ### 8.2 商户通知（notify 域）
 
@@ -860,6 +867,8 @@ JAVA_HOME 探测（corretto-18 优先，回退 java_home -v17）
 ```
 设计依据：先停注册中心会让其余服务的 Dubbo shutdown hook 阻塞在 unregister，必须有 SIGKILL 兜底；**data/ 目录永不删除**，重启数据完整。
 
+**`run.sh --docker`**：切换 `docker` profile（各域 `-Dspring.profiles.active=docker`），加载仓库外 `~/.config/payment-pro/docker.env`（MySQL 口令等，600）；先探测 Docker ZooKeeper `127.0.0.1:2181` 可达（`/dev/tcp`，30s），**跳过内嵌 registry**，其余 11 域 + gateway 照常启动。`--no-build` 跳过编译。详见 [§18.6](#186-启停与只读数据迁移)。
+
 ### 13.3 环境变量
 
 | 变量 | 默认 | 说明 |
@@ -869,6 +878,9 @@ JAVA_HOME 探测（corretto-18 优先，回退 java_home -v17）
 | ZK_PORT / ZK_HTTP_PORT | 2181 / 8092 | 注册中心 |
 | GATEWAY_PORT | 8080 | HTTP 入口 |
 | \<NAME\>_DUBBO_PORT | 20880~20891 | 各域 Dubbo 端口 |
+| MYSQL_HOST / MYSQL_PORT / MYSQL_USER / MYSQL_PASSWORD | 127.0.0.1 / 3306 / root / — | docker profile MySQL（口令放仓库外 docker.env） |
+| REDIS_HOST / REDIS_PORT | 127.0.0.1 / 6379 | docker profile 风控限流 + 网关缓存 |
+| ROCKETMQ_NAMESRV | 127.0.0.1:9876 | docker profile outbox 主投递 |
 
 ### 13.4 控制台
 
@@ -903,9 +915,10 @@ JAVA_HOME 探测（corretto-18 优先，回退 java_home -v17）
 
 | 边界 | 现状 | 生产演进 |
 |---|---|---|
-| 存储 | H2 单机文件库 | 每域替换 MySQL（SQL 已按 MySQL 方言编写，schema 平滑迁移） |
-| 注册中心 | 内嵌单点 ZK | ZK 集群 / Nacos |
-| 风控窗口 | 单进程内存 | Redis 滑动窗口 / 规则引擎平台 |
+| 存储 | H2 单机文件库（local）；**docker profile 已落地 MySQL pp_* 多库** | 每域独立 MySQL 实例 / 分库分表 |
+| 注册中心 | 内嵌单点 ZK（local）；**docker profile 已接共享 ZK 2181** | ZK 集群 / Nacos |
+| 风控窗口 | 单进程内存（local）；**docker profile 已落地 Redis Lua 滑动窗口** | 规则引擎平台 |
+| 消息投递 | outbox 轮询（local）；**docker profile 已落地 RocketMQ 主投递 + 轮询兜底** | 事务消息 / 多 topic 分流 |
 | 调度器 | 单实例 @Scheduled | 多实例 + 分布式锁（ShedLock）或分片调度 |
 | TCC 参与者路由 | 协调器内静态 Map | 参与者自注册 + 动态发现 |
 | DEAD 事务 | 日志+对账暴露，人工介入 | 差错处理平台（自动冲正/挂账） |
@@ -976,6 +989,89 @@ v1.3.0 的 account.topup/account.withdraw 仅产生账务分录，无交易单/�
 
 联调修复：① 普通 pay() 未置 bizType → INSERT 显式传 NULL 撞 NOT NULL（DEFAULT 仅在省略列时生效），补 `payment.setBizType("TRADE")`；② 交易单列表退款按钮对非 TRADE 资金单隐藏（与支付单列表一致）；③ verify-integration [G] 对账改轮询等待结算 outbox 异步投递收敛（消除时序抖动）。
 
+## 18. Docker 中间件集成（MySQL/RocketMQ/Redis/ZooKeeper）
+
+### 18.1 双 profile：零依赖 local 与中间件 docker
+
+同一套代码、同一套 mapper SQL，通过 Spring profile 切换基础设施载体，**业务逻辑与资金一致性机制完全不变**：
+
+| 维度 | `local`（默认，零依赖） | `docker`（共享中间件） |
+|---|---|---|
+| 存储 | H2 文件库 `data/<domain>.mv.db` | MySQL 单实例多库 `pp_<domain>`（3306） |
+| 注册中心 | 内嵌 ZooKeeper（2181/8092） | Docker ZooKeeper（2181，跳过内嵌 registry） |
+| 消息投递 | outbox 3s 轮询 | RocketMQ `PP_OUTBOX` 主投递 + 轮询兜底（9876） |
+| 风控限流 | 进程内存滑动窗口 | Redis Lua 滑动窗口（6379） |
+| 商户缓存 | 直查 member facade | Redis 缓存 TTL 60s（6379） |
+| 启动 | `./run.sh` | `./run.sh --docker` |
+
+中间件复用 **ops-pro `claim-shared` Docker 栈**（`ops-pro/deploy/middleware-compose.yml`），与 ride-pro/claim-pro 等共享同一 MySQL/RocketMQ/Redis 实例，端口全错开可同跑。docker profile 由各域 `application-docker.yml` 装配，开关均 `@ConditionalOnProperty`，local 模式 Bean 不加载、连接不建立（Lettuce/MQ 客户端懒加载），故新增 redis/mq 依赖**不破坏 local 零依赖启动**。
+
+### 18.2 MySQL 单实例多库（9 域）
+
+- **多库**：`pp_member / pp_account / pp_accounting / pp_trade / pp_channel / pp_settle / pp_notify / pp_recon / pp_payment`，建库脚本 `ops-pro/deploy/payment-databases.sql`（`CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci`）。risk/cashier 无库。
+- **方言同构**：mapper 注解 SQL 两端通用。序列取号统一 `SELECT next_value_for('seq_x')`：
+  - H2：`CREATE ALIAS next_value_for FOR "...H2Sequence.next"` → `SELECT NEXT VALUE FOR seq_x`。
+  - MySQL：`sequences(name PK, value)` 表 + 存储函数 `next_value_for`，`UPDATE sequences SET value=LAST_INSERT_ID(value+1)` 原子取号。
+- **建表**：各域 `schema-mysql.sql`（`CREATE TABLE IF NOT EXISTS` + sequences + 函数），对空库一次性执行；docker profile `spring.sql.init.mode=never`（不每次启动重跑）。TCC 日志表（`dtx_transaction/dtx_branch/tcc_branch_log/idempotent_record`）随域同迁。
+- **MySQL 坑位**：① 显式 `CHARSET=utf8mb4` 不带 COLLATE 时列默认 `utf8mb4_0900_ai_ci`，sequences 表与函数参数须显式 `COLLATE=utf8mb4_unicode_ci` 避免混 collation 报错；② 建函数需 `log_bin_trust_function_creators=1`（binlog 开启时）；③ `lines` 等保留字反引号。
+- **连接**：`jdbc:mysql://.../pp_<domain>?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true`，口令来自仓库外 `docker.env`。
+
+### 18.3 RocketMQ 主投递 + outbox 兜底
+
+保留事务性 outbox 作为**唯一事实来源**，RocketMQ 只做加速主路径，轮询兜底永不删除（服务端可靠性兜底）：
+
+```
+onConfirmed（TCC 终态同事务）
+  ├─ INSERT outbox(status=PENDING, next_retry_at = MQ模式 ? now+4000ms : 0)
+  └─ afterCommit ──▶ RocketMqOutboxPublisher.publish(event,bizId,payload)
+                       Message(PP_OUTBOX, tag=event, key=bizId, body={event,bizId,payload})
+消费侧（payment-payment 内 OutboxMessageListener）
+  └─ deliverByEventBizId(event,bizId) ──▶ 复用幂等 Dubbo 投递(settle/notify) + markDelivered
+       异常 → RECONSUME_LATER（RocketMQ 重投）；成功 → CONSUME_SUCCESS
+兜底（OutboxDispatcher 每 3s）
+  └─ 仅扫 next_retry_at 到期的 PENDING（MQ 已送达的行已 DELIVERED，不会重复）
+```
+
+- **配置**（`payment.mq.*`）：`enabled`、`namesrv=127.0.0.1:9876`、`topic=PP_OUTBOX`、`producer-group=payment-outbox-producer`、`consumer-group=payment-outbox-consumer`、`fallback-grace-ms=4000`。
+- **客户端**：原生 `rocketmq-client` 5.1.4（非 spring starter，对齐 claim-pro 已验证模式），`DefaultMQProducer/DefaultMQPushConsumer` `initMethod=start/destroyMethod=shutdown`，`@ConditionalOnProperty(payment.mq.enabled=true)`。客户端日志在 `~/logs/rocketmqlogs/`（非应用日志）。
+- **幂等不变**：消费侧走与轮询完全相同的 `IdempotentTemplate` 路径（SETTLE_PAY+paymentId / SETTLE_REFUND+refundId / NOTIFY+event:bizId），MQ 重投/轮询补发均不产生重复结算或通知。
+- **grace 设计**：MQ 模式 insert 即置 `next_retry_at=now+4000ms`，给 MQ 主路径 4s 窗口；3s 轮询只在该窗口后补 MQ 未送达的行，正常态零重复投递。
+
+### 18.4 Redis 风控限流 + 网关商户缓存
+
+- **风控滑动窗口**（`RedisRateLimiter`，`payment.risk.redis.enabled=true`）：Lua 原子脚本对 ZSET `pp:risk:window:<payer>` 做 `ZREMRANGEBYSCORE`(清窗口外) → `ZCARD`(计数) → 超限返回 0，否则 `ZADD`(member=now:UUID) + `PEXPIRE`(窗口长)。窗口 `WINDOW_MILLIS=10000`、`WINDOW_MAX=5`（第 6 笔拒绝），与 local 内存版语义一致。`InMemoryRateLimiter` 为 local 回退（`matchIfMissing=true`）。
+- **网关商户缓存**（`MerchantCache`，`payment.cache.redis.enabled=true`）：OpenAPI 验签先 `GET pp:openapi:app:<appId>`（JSON→MemberDTO，TTL 60s），miss 回源 member facade 并 best-effort 回填；读异常降级直查。local 模式禁用，直查 facade。
+- **序列化复用** `TccContextUtil.toJson/fromJson`（Jackson 传递依赖），不新增 ObjectMapper Bean。
+
+### 18.5 Docker ZooKeeper（跳过内嵌 registry）
+
+docker profile 不再启动 `payment-registry` 内嵌 ZK，改用共享栈 ZooKeeper `2181`。`run.sh --docker` 先 `/dev/tcp/127.0.0.1/2181` 探测（30s），不可达即报错提示先在 ops-pro 起 zookeeper；可达则 11 域 + gateway 直接注册到 Docker ZK。Dubbo 端口分配不变（gateway 20880、域 20881~20891）。
+
+### 18.6 启停与只读数据迁移
+
+```bash
+# 中间件（ops-pro 共享栈）先起：MySQL/RocketMQ/Redis/ZooKeeper
+./run.sh --docker            # 编译 + docker profile 启动（--no-build 跳过编译）
+./stop.sh                    # 优雅停止（data/ 与 MySQL 数据均保留）
+
+# 只读 H2 → MySQL 迁移（把本地历史数据搬进 pp_*，原 H2 库绝不修改）
+./migrate-h2-to-mysql.sh --dry-run   # 只统计待迁移行数/序列
+./migrate-h2-to-mysql.sh             # INSERT IGNORE 去重写入 + 序列回填
+```
+
+- **迁移工具**（`tools/MigrateH2ToMySQL.java`）：把 `data/<domain>.mv.db` **复制到临时目录**后以 `ACCESS_MODE_DATA=r;MODE=MySQL;DATABASE_TO_LOWER=TRUE` 只读打开（原库不被打开/修改）；逐表 `INSERT IGNORE`（按 PK/唯一键去重，可重复执行）；序列按 H2 `INFORMATION_SCHEMA.SEQUENCES.BASE_VALUE` 回填 MySQL `sequences.value`（`GREATEST` 取大，避免取号回退碰撞）。缺表告警跳过、按域事务提交。
+- **密钥仓库外**：`~/.config/payment-pro/docker.env`（600，真实 MySQL 口令），仓库仅留 `config/docker.env.example`。
+- **数据保护**：`data/` H2 库与 MySQL 数据的删除/重置须用户明确确认；迁移只读不删。
+
+### 18.7 验证记录（2026-11-18，docker profile）
+
+重置 pp_* 合成测试数据后全量回归：smoke-test.py **79/79**、verify-pro.py **22/22**（`PP_PROFILE=docker`，含 [D] 全停重启 MySQL 持久化恢复）。中间件实测：
+
+- **RocketMQ**：`PP_OUTBOX` 四队列 broker/consumer 偏移完全一致，`Consume Diff Total=0`、`%RETRY%payment-outbox-consumer=0`（零积压零失败）；并行 ride-pro 流量亦经 MQ 干净消费。
+- **Redis**：风控 ZSET `pp:risk:window:<payer>` 按时间戳评分、member 唯一、PTTL≈窗口长；网关缓存键 `pp:openapi:app:appM1` 命中；控制台支付单列表可见多条「交易过于频繁」限频拒绝（限流生效）。
+- **MySQL**：控制台实时渲染会员/账户/交易单/支付单（99 行），账务试算平衡（借=贷），13/13 健康。
+- **local 回退**：payment-risk 以 local profile 独立启动成功（`Started RiskApplication`，Redis 懒加载无连接、InMemoryRateLimiter 生效），证明新增依赖不破坏零依赖启动。
+
 ## 附录 A：关键代码索引
 
 | 机制 | 位置 |
@@ -1000,11 +1096,14 @@ v1.3.0 的 account.topup/account.withdraw 仅产生账务分录，无交易单/�
 
 ```bash
 cd /Users/hegan/Documents/Qoder/payment-pro
-./run.sh                 # 编译 + 启动 13 进程（--no-build 跳过编译）
-./stop.sh                # 优雅停止（数据保留）
+./run.sh                 # local：编译 + 启动 13 进程（--no-build 跳过编译）
+./run.sh --docker        # docker：MySQL/RocketMQ/Redis/ZK 共享栈（先起 ops-pro 中间件）
+./stop.sh                # 优雅停止（data/ 与 MySQL 数据保留）
 open http://127.0.0.1:8080/
 python3 smoke-test.py    # 79 项功能断言
 python3 verify-pro.py    # 22 项并发/混沌/持久化断言
+PP_PROFILE=docker python3 verify-pro.py   # docker profile 回归（需 source docker.env）
+./migrate-h2-to-mysql.sh --dry-run        # 只读 H2→MySQL 迁移预演
 ```
 
 ---

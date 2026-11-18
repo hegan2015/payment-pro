@@ -8,7 +8,7 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface ReconReportMapper {
 
-    @Select("SELECT NEXT VALUE FOR seq_recon")
+    @Select("SELECT next_value_for('seq_recon')")
     long nextId();
 
     @Insert("INSERT INTO recon_report(id,checked_at,pass,report) VALUES(#{id},#{checkedAt},#{pass},#{report})")

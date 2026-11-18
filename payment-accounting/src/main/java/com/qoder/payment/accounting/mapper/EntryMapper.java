@@ -27,7 +27,7 @@ public interface EntryMapper {
     @Select("<script>SELECT COUNT(*) FROM ledger_entry " + FILTER + "</script>")
     long countPage(EntryQuery query);
 
-    @Select("SELECT NEXT VALUE FOR seq_entry")
+    @Select("SELECT next_value_for('seq_entry')")
     long nextId();
 
     @Insert("INSERT INTO ledger_entry(id,seq,biz_no,account_id,dir,amount,balance_after,subject,ref_id,created_at) "

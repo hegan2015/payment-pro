@@ -65,4 +65,17 @@ public class OutboxDispatcher {
             default -> throw new IllegalStateException("未知 outbox 事件: " + message.getEvent());
         }
     }
+
+    /**
+     * MQ 主投递入口：按 event+bizId 定位 PENDING 行并投递（接收端幂等）。
+     * 已 DELIVERED/DEAD 或不存在则跳过；投递失败抛出由 broker 重投，轮询兜底亦会处理。
+     */
+    public void deliverByEventBizId(String event, String bizId) {
+        OutboxDO message = outboxMapper.selectByEventBizId(event, bizId);
+        if (message == null || !"PENDING".equals(message.getStatus())) {
+            return;
+        }
+        deliver(message);
+        outboxMapper.markDelivered(message.getId());
+    }
 }

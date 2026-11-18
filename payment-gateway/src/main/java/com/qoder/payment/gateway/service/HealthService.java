@@ -84,6 +84,9 @@ public class HealthService {
     }
 
     private boolean registryUp() {
+        if ("docker".equals(System.getProperty("spring.profiles.active"))) {
+            return zkRuok();
+        }
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("http://127.0.0.1:" + System.getenv().getOrDefault("ZK_HTTP_PORT", "8092") + "/health"))
@@ -91,6 +94,22 @@ public class HealthService {
                     .GET()
                     .build();
             return httpClient.send(request, HttpResponse.BodyHandlers.ofString()).statusCode() == 200;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Docker ZooKeeper 四字探针 ruok → imok。 */
+    private boolean zkRuok() {
+        int port = Integer.parseInt(System.getenv().getOrDefault("ZK_PORT", "2181"));
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress("127.0.0.1", port), 800);
+            socket.setSoTimeout(800);
+            socket.getOutputStream().write("ruok".getBytes());
+            socket.getOutputStream().flush();
+            byte[] buf = new byte[16];
+            int n = socket.getInputStream().read(buf);
+            return n > 0 && new String(buf, 0, n).contains("imok");
         } catch (Exception e) {
             return false;
         }
