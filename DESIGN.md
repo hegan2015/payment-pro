@@ -3,7 +3,7 @@
 > 参考支付宝领域划分的工业级支付系统
 > Spring Boot 3.2 + Apache Dubbo 3.2 + 自研 XTS 风格 TCC + 事务性 Outbox
 > 版本：1.8.0 ｜ 文档日期：2026-11-18
-> v1.8 更新：Docker 中间件集成（详见 §18）——双 profile（local 零依赖 / docker 共享栈）；MySQL 单实例多库 pp_*（序列函数同构）；RocketMQ PP_OUTBOX 主投递 + outbox 轮询兜底；Redis Lua 风控滑动窗口 + 网关商户缓存；Docker ZooKeeper 2181（跳过内嵌 registry）；run.sh --docker + 只读 H2→MySQL 迁移工具。smoke 79/79、verify-pro 22/22（docker）回归通过
+> v1.8 更新：Docker 中间件集成（详见 §18）——双 profile（local 零依赖 / docker 共享栈）；MySQL 单实例多库 pp_*（序列函数同构）；RocketMQ PP_OUTBOX 主投递 + outbox 轮询兜底；Redis Lua 风控滑动窗口 + 网关商户缓存；Docker ZooKeeper 2181（跳过内嵌 registry）；run.sh --docker + 只读 H2→MySQL 迁移工具。smoke 79/79、verify-pro 22/22（docker）回归通过。文档已全面对齐双 profile 实现：§1.2 关键取舍（outbox 为可靠性底座/MQ 可插拔、H2 local·MySQL docker）、§1.3 技术选型（全栈版本与取舍）、§5.1 存储选型、§12.1 验签（MerchantCache）、附录 A 代码索引、附录 C DDL（MySQL 方言/POST/订单幂等键）、附录 D 契约（post/entriesPage/fundPay）、附录 E 走读（5 参 insert+afterCommit MQ 主投递、行号刷新）、附录 F 边界（F.9 中间件降级与资金单）
 > v1.7 更新：充值/提现升级为资金单（fund.topup/fund.withdraw → 交易单+支付单，biz_type 区分 TRADE/TOPUP/WITHDRAW，SYS_FUND 系统资金商户、fee=0、BALANCE、完整 TCC）；账务流水跨账户全局分页查询（详见 §17）
 > v1.3 更新：HTTPS 8443 双连接器 + 自签证书自动生成；OpenAPI 扩展账户/退款/查询端点与通用幂等过账，支撑 ride-pro 双账本镜像接入（详见 §16）
 > v1.2 更新：TCC 抽成零业务耦合通用组件 tcc-core（com.qoder.tcc，自动装配）；随后整体移除 payment-dtx 模块，业务模块直依赖 tcc-core（16 模块），错误码映射下沉 FacadeSupport，详见 §3.2 与 §6.7
@@ -56,26 +56,57 @@
 | 工业级幂等 | 唯一键先插占位 + 同事务结果回填 + 回放先于状态检查 + CAS 状态机 |
 | 异步补偿 | 事务性 outbox + 双调度恢复（TCC recover / outbox dispatch）+ 通知退避重试 |
 | 资金正确性 | 复式记账、冻结/解冻、试算平衡、五方对账 |
-| 开箱即用 | H2 嵌入式文件库 + 内嵌 ZooKeeper，`./run.sh` 一键编译启动 13 进程 |
+| 开箱即用 | local profile 零依赖：H2 嵌入式文件库 + 内嵌 ZooKeeper，`./run.sh` 一键编译启动 13 进程；docker profile 接共享中间件（MySQL/RocketMQ/Redis/ZK），`./run.sh --docker`（见 §18） |
 
 ### 1.2 关键取舍（为什么这样设计）
 
 **为什么自研 TCC 而不是 Seata？**
-- 约束是零外部依赖：Seata 需要独立部署 TC Server，违背"一键运行"。
+- local profile 的硬约束是零外部依赖：Seata 需要独立部署 TC Server，违背"一键运行"。自研协调器内嵌于 payment-payment 进程，无需额外集群。
+- 即便 docker profile 放开了中间件依赖，仍保留自研 tcc-core（不引入 Seata）：嵌入式协调器 + 围栏表的正确性机制与 Seata TCC 同构，迁移收益不抵改造面，故 MQ/MySQL/Redis 可插拔而 TCC 内核不动。
 - 支付场景天然适合 TCC：资金预留（冻结）、渠道预授权、订单预留都是标准的"资源预留"语义，比 AT 模式的全局锁更贴合支付业务，且无脏写问题。
 - 自研可以完整展示 XTS 的核心机制（事务日志、分支日志、空回滚、防悬挂、补偿恢复），这些机制与蚂蚁 XTS / Seata TCC 的设计同构，代码即文档。
 
-**为什么用事务性 outbox 而不是 MQ？**
-- RocketMQ/Kafka 同样需要外部部署。outbox 模式把"业务终态 + 待发消息"放进同一个本地事务，原子性由数据库保证，投递由调度器补偿——这是分布式消息的最终一致性标准解法之一，正确性与 MQ 事务消息等价。
-- 语义：**至少一次投递 + 接收端幂等 = 恰好一次效果**。
+**为什么以事务性 outbox 为可靠性底座，MQ 只作可插拔主投递？**
+- outbox 把"业务终态 + 待发消息"放进同一个本地事务，原子性由数据库保证——**无论是否接 MQ，这一步都不变**。这是分布式消息最终一致性的标准解法，正确性与 MQ 事务消息等价（RocketMQ 事务消息也需半消息 + 回查来兜底原子性，本质同源）。
+- local profile（零依赖默认）：仅靠 outbox + 3s 轮询调度补偿投递，不引入任何外部 MQ。
+- docker profile：RocketMQ `PP_OUTBOX` 作为主投递通道（事务提交后 afterCommit 发送，低延迟），outbox 行仍同事务写入并留宽限期，轮询作为兜底；MQ 发送失败被吞掉留 PENDING 交轮询、消费失败 RECONSUME_LATER 重投，退避重试耗尽置 DEAD 等对账/人工（见 §18.3）。
+- 语义：**至少一次投递 + 接收端幂等 = 恰好一次效果**。MQ 只是把"投递"从轮询加速为推送，可靠性语义完全由 outbox + 幂等保证，故 MQ 可插拔、不改变正确性论证。
 
-**为什么 H2 文件库 + 每域一库？**
-- H2 文件模式提供真实的事务、行锁（SELECT FOR UPDATE）、唯一约束、序列——TCC 与幂等的所有正确性论证都依赖这些数据库能力，内存 Map 做不到。
-- 每域独立数据库文件（`data/<domain>.mv.db`）模拟"数据库按域拆分"的微服务数据自治原则：跨域绝不共享表，只通过 Dubbo 接口访问，为将来平滑迁移 MySQL 分库留好边界。
+**为什么 H2 文件库（local）/ MySQL 多库（docker）+ 每域一库？**
+- 正确性依赖真实数据库能力：事务、行锁（SELECT FOR UPDATE）、唯一约束、序列——TCC 与幂等的所有论证都建立在此之上，内存 Map 做不到。H2 文件模式与 MySQL 都提供这些能力，故论证在两个 profile 下通用。
+- local profile 用 H2 嵌入式文件库（`data/<domain>.mv.db`），零外部依赖、一键运行；docker profile 切共享 MySQL 单实例多库（`pp_<domain>`），9 域各自独立 database（见 §18.2）。
+- "每域一库"在两个 profile 下一致：跨域绝不共享表，只通过 Dubbo 接口访问，落实微服务数据自治。当初为平滑迁移 MySQL 分库预留的边界，已在 docker profile 兑现（schema-mysql.sql 一次性建表 + 序列方言适配，业务 SQL 零改动）。
 
 **为什么一阶段同步、二阶段异步？**
 - Try 同步执行：失败立即整体回滚并给用户明确错误（余额不足、渠道拒绝等），用户体验与资金安全都要求 Try 阶段强一致反馈。
 - Confirm/Cancel 异步驱动：二阶段只操作"已预留"的资源，理论上必然成功，失败只是暂时性的（网络/宕机），交给补偿调度按退避重试，接口快速返回 PROCESSING，客户端轮询终态。这是 XTS 的标准形态。
+
+### 1.3 技术选型
+
+主流正式框架 + 自研事务内核，版本由 Spring Boot parent 与 dubbo-bom 统一托管（仅 MyBatis/ZooKeeper/RocketMQ 显式钉版）。选型以"资金正确性可论证 + local 零依赖一键运行 + docker 可平滑切生产共享栈"为准绳。
+
+| 层次 | 技术 | 版本 | 选型理由 | 备选与取舍 |
+|---|---|---|---|---|
+| 语言/运行时 | Java | 17（release 17） | LTS，Spring Boot 3.x 基线要求 17+；switch 表达式/record 提升表达力 | 21（未采用，3.2.5 基线 17 已足够） |
+| 应用框架 | Spring Boot | 3.2.5 | 自动装配 + 内嵌 Tomcat + 生产级 starter；`@ConditionalOnProperty` 实现双 profile 开关，local 不加载中间件 Bean | Spring Cloud（过重，RPC 治理交给 Dubbo） |
+| RPC/服务治理 | Apache Dubbo | 3.2.14 | 高性能 RPC + 接口级 facade 契约 + `group` 路由 TCC 参与者 + 注册发现 | OpenFeign/HTTP（契约与性能弱）、gRPC（需另建治理生态） |
+| 注册中心 | ZooKeeper | 3.8.4 | Dubbo 经典 CP 注册中心；local 内嵌 `ZooKeeperServer` 零依赖，docker 共享 ZK 2181 | Nacos（需额外部署，违背 local 零依赖） |
+| 注册客户端 | Curator 5 | dubbo-dependencies-zookeeper-curator5 | Dubbo 官方 ZK 适配，排除 log4j/reload4j 统一日志 | — |
+| ORM | MyBatis Spring Boot Starter | 3.0.3 | 注解式 Mapper，SQL 完全可控（`SELECT FOR UPDATE`/唯一键/CAS 行数检查），贴合资金正确性论证 | JPA/Hibernate（隐式 SQL/脏检查不利于精确资金控制） |
+| 数据库（local） | H2 | 2.2.224（Boot 托管） | 嵌入式文件库，真实事务/行锁/唯一约束/序列，`MODE=MySQL` 方言贴近生产，零外部依赖 | SQLite（锁/序列弱）、内存 Map（无事务，正确性不成立） |
+| 数据库（docker） | MySQL + mysql-connector-j | 8.3.0（Boot 托管） | 生产级关系库，单实例多库 `pp_*`；序列用 `sequences` 表+存储函数与 H2 `ALIAS` 同构，业务 SQL 零改动 | PostgreSQL（MySQL 更贴合支付宝口径与团队栈） |
+| 分布式事务 | 自研 tcc-core（com.qoder.tcc） | 工程内组件 | XTS 风格 TCC，嵌入式协调器+围栏表，零业务耦合；资金预留语义贴合、无脏写（见 §1.2/§6） | Seata（需独立 TC 集群，违背 local 零依赖；docker 亦保留自研） |
+| 可靠消息 | 事务性 Outbox + RocketMQ client | 5.1.4 | outbox 同事务原子落库为底座；docker `PP_OUTBOX` 主投递加速 + 轮询兜底；原生 client（非 starter）精确控制 afterCommit/消费幂等 | Kafka（运维重）、纯 MQ 事务消息（仍需回查兜底，见 §1.2/§8） |
+| 缓存/限流 | Spring Data Redis（Lettuce） | Boot 托管 | docker 风控 Lua 滑动窗口（跨实例共享）+ 网关商户凭证缓存 TTL60s；Lettuce 异步线程安全 | Jedis（同步阻塞）、Caffeine（本地缓存无法跨实例共享限流窗口） |
+| JSON 序列化 | Jackson | Boot 托管 | `TccContextUtil` 统一 toJson/fromJson（outbox payload/TCC context/缓存值） | Gson/Fastjson（Boot 原生 Jackson，免额外依赖与安全历史包袱） |
+| 日志 | SLF4J + Logback | Boot 托管 | 全链路 traceId（MDC）+ 业务常规日志；排除 log4j/reload4j 统一 Logback | Log4j2（Boot 默认 Logback 足够） |
+| Web/接入 | spring-boot-starter-web | Boot 3.2.5 | 网关 REST + 静态控制台 + HTTPS 8443 双连接器（自签证书） | WebFlux（本系统阻塞式 JDBC/Dubbo，Servlet 栈更贴合） |
+| 代码简化 | Lombok | Boot 托管 | `@RequiredArgsConstructor`/`@Slf4j`/`@Data` 消除样板，构造器注入 | — |
+| 构建 | Maven（mvnw wrapper） | 3.x | 16 模块多模块工程，Boot parent + dubbo-bom 统一版本；wrapper 免环境差异 | Gradle（团队栈 Maven） |
+
+**双 profile 选型哲学**：同一套业务代码与 facade 契约，靠 `@ConditionalOnProperty` 切换基础设施——local 零依赖（H2 + 内嵌 ZK + outbox 轮询 + 内存限流）保证"开箱即用、正确性可论证"；docker 接生产共享栈（MySQL + RocketMQ + Redis + 共享 ZK）保证"低延迟、跨实例共享、可水平扩展"。中间件可插拔而 TCC 内核与资金语义不动（详见 §18）。
+
+**版本治理**：H2/MySQL/Lettuce/Jackson/Lombok/Logback/Netty 一律由 `spring-boot-starter-parent` 3.2.5 托管，避免版本漂移；Dubbo 生态由 `dubbo-bom` 3.2.14 对齐；显式钉版仅 `mybatis-starter` 3.0.3、`zookeeper` 3.8.4、`rocketmq-client` 5.1.4（Boot 未托管或需独立于 Dubbo 传递版本）。
 
 ---
 
@@ -118,12 +149,14 @@
    └────────────────────┘   └───────────────────────────────────────────┘
 ```
 
+> 上图为 **local 默认形态**（内嵌 ZK + 各域 H2 文件库）。网关另有 **HTTPS :8443** 双连接器（OpenAPI 商户接入，§16.1）。`docker` profile 下注册中心替换为共享 Docker ZooKeeper :2181（跳过内嵌 registry）、存储改 MySQL `pp_*` 多库、outbox 改 RocketMQ 主投递、风控/缓存改 Redis，详见 [§18](#18-docker-中间件集成mysqlrocketmqrediszookeeper)。
+
 ### 2.2 域职责一览
 
 | 域 | 进程 | Dubbo 端口 | 职责 | 数据库 |
 |---|---|---|---|---|
 | 网关 | payment-gateway | 20880 | HTTP 入口、OpenAPI 验签、聚合查询、静态控制台 | 无 |
-| 注册中心 | payment-registry | — | 内嵌 ZooKeeper（2181）+ 健康探针（8092） | 无 |
+| 注册中心 | payment-registry | — | local 内嵌 ZooKeeper（2181）+ 健康探针（8092）；docker 共享 ZK，跳过内嵌 | 无 |
 | 会员 | payment-member | 20881 | 用户/商户注册、appId/appSecret、冻结 | member |
 | 账户 | payment-account | 20882 | 支付账户开立、状态管理（余额权威在账务域） | account |
 | 账务 | payment-accounting | 20883 | 复式记账、余额/冻结、充值、试算平衡 | accounting |
@@ -131,10 +164,12 @@
 | 支付核心 | payment-payment | 20885 | 支付/退款编排、TCC 协调器、outbox | payment |
 | 收银台 | payment-cashier | 20886 | 支付方式渲染、支付受理转发 | 无 |
 | 渠道 | payment-channel | 20887 | 模拟银行：预授权/扣款/撤销/退款 | channel |
-| 风控 | payment-risk | 20888 | 单笔限额、滑动窗口频率 | 无（内存） |
+| 风控 | payment-risk | 20888 | 单笔限额、滑动窗口频率（local 内存 / docker Redis） | 无 |
 | 清结算 | payment-settle | 20889 | 结算单登记、商户汇总 | settle |
 | 消息 | payment-notify | 20890 | 商户通知登记、HTTP 推送、退避重试 | notify |
 | 对账 | payment-recon | 20891 | 五方核对、报告落库 | recon |
+
+> 数据库列名为 local H2 库名；docker profile 对应 MySQL 库 `pp_<domain>`（如 pp_payment），单实例多库，见 §18.2。
 
 ### 2.3 依赖方向原则
 
@@ -152,7 +187,7 @@
 ```
 payment-pro (parent, pom)
 ├── tcc-core            通用 TCC 组件（零业务耦合）：协调器/参与者模板/幂等模板/补偿/自动装配
-├── payment-common      基础库：Result/ResultCode/BizException/MoneyUtil/TraceFilter（含 TccException 边界转码）
+├── payment-common      基础库：Result/ResultCode/BizException/MoneyUtil/TraceFilter（含 TccException 边界转码）+ db/H2Sequence（H2 序列 alias）
 ├── payment-facade      契约库：全部 Dubbo 接口 + DTO + TCC 上下文 + HealthFacade(Impl)
 ├── payment-registry    内嵌 ZooKeeper 进程
 ├── payment-member      ┐
@@ -168,6 +203,8 @@ payment-pro (parent, pom)
 ├── payment-recon       ┘
 └── payment-gateway     HTTP 网关 + 控制台
 ```
+
+> v1.8 新增包/资源：payment-payment 含 `mq/`（MqConfig/MqProperties/OutboxPublisher/RocketMqOutboxPublisher/OutboxMessageListener，docker RocketMQ 主投递）；payment-risk 含 `service/RateLimiter` 双实现（InMemoryRateLimiter / RedisRateLimiter）；payment-gateway 含 `web/MerchantCache`（Redis 商户缓存）；payment-common 含 `db/H2Sequence`。各有库域带 `schema.sql`（local H2）+ `schema-mysql.sql`（docker MySQL）+ `application-docker.yml`，详见 §18。
 
 ### 3.2 依赖规则
 
@@ -205,10 +242,13 @@ dubbo:
   protocol:
     name: dubbo
     port: ${<NAME>_DUBBO_PORT:2088x}
+  provider:
+    timeout: 5000
+    retries: 0          # 关键：写操作绝不自动重试，重试权交给业务幂等层
   consumer:
     check: false        # 启动不强制依赖在线，支持任意启动顺序
-    timeout: 8000
-    retries: 0          # 关键：写操作绝不自动重试，重试权交给业务幂等层
+    timeout: 5000       # 网关消费端为 8000（聚合查询略宽）
+    retries: 0
   application:
     qos-enable: false
 ```
@@ -246,7 +286,7 @@ dubbo:
 ### 4.4 健康治理
 
 - 每域导出 `HealthFacade.ping()`（group=应用名）。
-- 网关 `HealthService` 聚合：gateway 自身 + registry（HTTP 探针 8092/health，800ms 超时）+ 11 域 Dubbo ping（timeout 1500ms），任一失败标红但不影响其余。
+- 网关 `HealthService` 聚合：gateway 自身 + registry + 11 域 Dubbo ping（timeout 1500ms），任一失败标红但不影响其余。registry 探针按 profile 分支：local 走内嵌 ZK 健康 HTTP `8092/health`；docker 走 Docker ZK 四字命令 `ruok`→`imok`（TCP 2181，800ms 超时）。
 - `run.sh` 启动后轮询聚合健康直至 13/13 才宣告就绪。
 
 ---
@@ -255,12 +295,12 @@ dubbo:
 
 ### 5.1 存储选型
 
-- H2 2.x **文件模式**，每域一个库：`jdbc:h2:file:${DATA_DIR:./data}/<domain>;MODE=MySQL;DATABASE_TO_LOWER=TRUE`
+- **local profile（零依赖默认）**：H2 2.x **文件模式**，每域一个库：`jdbc:h2:file:${DATA_DIR:./data}/<domain>;MODE=MySQL;DATABASE_TO_LOWER=TRUE`
   - `MODE=MySQL`：SQL 方言贴近生产 MySQL，迁移成本低。
   - `DATABASE_TO_LOWER=TRUE`：标识符小写，与 MyBatis 驼峰映射（`map-underscore-to-camel-case`）配合。
   - 注意：H2 2.x 要求相对路径显式 `./` 前缀（隐式相对路径报 90011）。
-- 建表：各域 `schema.sql`（`CREATE TABLE IF NOT EXISTS` + `CREATE SEQUENCE IF NOT EXISTS`），Spring SQL init 幂等执行，重启不丢数据。
-- ID 生成：数据库序列（`SELECT NEXT VALUE FOR seq_xxx`）+ 业务前缀（P 支付 / R 退款 / O 订单 / N 通知 / S 结算 / RC 对账 / E 分录 / T 全局事务），全局可读、无中心发号器依赖。
+- 建表：local 各域 `schema.sql`（`CREATE TABLE IF NOT EXISTS` + `CREATE SEQUENCE IF NOT EXISTS`），Spring SQL init 幂等执行，重启不丢数据；docker 各域 `schema-mysql.sql`（InnoDB/utf8mb4，`sql.init.mode=never` 一次性手动建表，序列改用 `sequences` 表 + 存储函数，见 §18.2）。
+- ID 生成：统一 `SELECT next_value_for('seq_x')` 取号（local 经 H2 `CREATE ALIAS` 桥接原生序列 `H2Sequence.next`，docker 走 MySQL `sequences` 表 + 存储函数，见 §18.2）+ 业务前缀（P 支付 / R 退款 / O 订单 / N 通知 / S 结算 / RC 对账 / E 分录 / T 全局事务），全局可读、无中心发号器依赖。
 
 > **Docker profile（MySQL）**：上述 H2 为 `local` 零依赖默认。`docker` profile 改用共享 MySQL 单实例多库 `pp_<domain>`（9 域），mapper SQL 不变——序列取号统一走 `SELECT next_value_for('seq_x')`：H2 由 `CREATE ALIAS` 桥接 `H2Sequence.next`，MySQL 由 `sequences` 表 + 存储函数（`LAST_INSERT_ID`）实现，两端同构。详见 [§18](#18-docker-中间件集成mysqlrocketmqrediszookeeper)。
 
@@ -268,6 +308,7 @@ dubbo:
 
 ```sql
 payment            -- 支付单：request_id UNIQUE（幂等键）、xid（关联全局事务）、
+                   -- biz_type(TRADE/TOPUP/WITHDRAW，v1.7)、
                    -- status PROCESSING/SUCCESS/FAILED/REFUNDED、refunded_amount/refunded_fee
 refund_record      -- 退款单：request_id UNIQUE、xid、biz_no（账务转账号）
 outbox             -- 本地消息表：event/biz_id/payload/status(PENDING/DELIVERED/DEAD)/
@@ -276,6 +317,8 @@ dtx_transaction    -- 全局事务日志：xid PK、(biz_type,biz_no) UNIQUE、s
                    -- retry_count/next_retry_at/version；索引 (status,next_retry_at)
 dtx_branch         -- 分支日志：(xid,branch_id) UNIQUE、participant/action/status/context/seq
 ```
+
+> 交易域 `trade_order` 同样含 `biz_type` 与 `out_trade_no`（同商户幂等，UNIQUE idx_order_out_trade），字段级 DDL 见 [附录 C.4](#c4-trade-库payment-trade)。
 
 ### 5.3 参与者侧公共表（accounting / channel / trade 各自库内）
 
@@ -501,7 +544,7 @@ pay(request):
 
 ### 7.2 第二层：IdempotentTemplate（通用业务幂等）
 
-用于充值（TOPUP/bizNo）、结算登记（SETTLE_PAY/paymentId、SETTLE_REFUND/bizId）、退款标记（REFUND_MARK/bizNo）、通知登记（NOTIFY/event:bizId）：
+用于充值（TOPUP/bizNo）、通用过账（POST/bizNo，v1.3 转账/提现）、结算登记（SETTLE_PAY/paymentId、SETTLE_REFUND/bizId）、退款标记（REFUND_MARK/bizNo）、通知登记（NOTIFY/event:bizId）：
 
 ```java
 tx.execute(s -> {
@@ -644,7 +687,7 @@ requestId 必填 → 幂等预检 → method 校验(BALANCE/CARD)
 → 订单 CREATED 校验 → 商户账户定位
 → BALANCE: 付款账户 ACTIVE + 余额足额 / CARD: 卡号必填
 → 计费 fee = MoneyUtil.fee(amount, feeBps)   // 默认 60bps = 0.6%
-→ INSERT payment(PROCESSING, request_id UNIQUE)
+→ INSERT payment(PROCESSING, request_id UNIQUE, biz_type=TRADE)
 → 风控 check（拒绝 → payment FAILED 留痕 + 抛错）
 → coordinator.begin("PAY", paymentId) + updateXid
 → registerBranch: accounting(PAY) → [channel(PAY) 仅 CARD] → trade(PAY)
@@ -659,6 +702,8 @@ requestId 必填 → 幂等预检 → method 校验(BALANCE/CARD)
 - 支付单终态翻转在 SQL 内原子完成：`status = CASE WHEN refunded_amount >= amount THEN 'REFUNDED' ELSE status END`。
 
 分支注册顺序 accounting → channel → trade 的考量：资金冻结最先（最可能失败的资源约束前置），渠道次之，订单预留最后（最轻量）。Try 失败时回滚成本最小化。
+
+**`fundPay()` 资金单（v1.7）**：充值/提现与商户交易同构——每笔资金操作生成一笔交易单 + 一笔支付单。流水线：bizType 校验（TOPUP/WITHDRAW）→ requestId 回放 → `ensureFundMerchant()`（synchronized 懒建系统资金商户 SYS_FUND + 账户）→ WITHDRAW 可用余额预检 → `tradeFacade.createOrder`（outTradeNo=requestId、bizType 透传）→ INSERT payment（**fee=0、method=BALANCE、biz_type=TOPUP/WITHDRAW**）→ `begin("PAY")` + 账务/交易两分支（**无渠道分支**）→ tryAll/commitAsync。账务 bizNo=支付单 id、refId=交易单 id：TOPUP 借 SYS_CASH 贷用户，WITHDRAW 借用户贷 SYS_CASH。完结复用通用 `PaymentCompletionListener`（写 SETTLE_PAY/NOTIFY_PAY outbox），故资金单天然过五方对账，ReconService 零改动。详见 §17.1。
 
 ### 9.6 收银台（cashier）
 
@@ -680,9 +725,11 @@ PAY:    PREAUTH ──capture──▶ CAPTURED      REFUND: PREAUTH ──captu
 
 ### 9.8 风控（risk）
 
-简化规则引擎（内存滑动窗口）：
+简化规则引擎，`RiskService` 注入 `RateLimiter` 抽象，频率限制双实现按 `payment.risk.redis.enabled` 切换（语义一致）：
 1. 单笔限额 10,000,000 分（10 万元）；
-2. 同一 payerId 10s 内 ≤5 笔（`ConcurrentHashMap<String, Deque<Long>>` + 窗口锁）。
+2. 同一 payerId 10s 内 ≤5 笔（滑动窗口）：
+   - **local**：`InMemoryRateLimiter`（`ConcurrentHashMap<String, Deque<Long>>` + 窗口锁，`matchIfMissing=true` 默认）；
+   - **docker**：`RedisRateLimiter`（Lua 原子脚本对 ZSET `pp:risk:window:<payer>` 做 ZREMRANGEBYSCORE→ZCARD→ZADD+PEXPIRE，见 §18.4）。
 
 payerId：BALANCE=accountId；CARD="CARD:"+cardNo（卡维度独立限频）。拒绝结果带 reason，支付核心落 FAILED 留痕。
 
@@ -825,9 +872,9 @@ SYS_FEE 余额 = Σ结算净手续费             （手续费闭环）
 
 对齐支付宝开放平台签名机制：
 1. 必填 `appId / sign / timestamp`；timestamp 与服务端时差 > ±300s → 拒绝（防重放）。
-2. `memberFacade.getByAppId(appId)` 定位商户 appSecret。
+2. 经 `MerchantCache` 定位商户 appSecret：docker profile 先查 Redis `pp:openapi:app:<appId>`（TTL 60s，读写异常降级直查），未命中回源 `memberFacade.getByAppId(appId)`；local profile 直查 facade（见 §18.4）。
 3. 参数按 key TreeMap 排序（剔除 sign、跳过 null）→ `k=v&k=v` 拼接 → **HmacSHA256(secret)** → hex 与 sign 比对，失败 400"签名验证失败"。
-4. `trade.create / trade.pay` 映射内部 facade（outTradeNo→requestId，BANKCARD→CARD 归一化）。
+4. OpenAPI method 映射内部 facade（outTradeNo→requestId，BANKCARD→CARD 归一化）；端点全集与参数见 §16.2。
 
 ### 12.2 敏感信息
 
@@ -1080,11 +1127,21 @@ docker profile 不再启动 `payment-registry` 内嵌 ZK，改用共享栈 ZooKe
 | TCC 参与者模板 | tcc-core/.../TccParticipantTemplate.java |
 | 幂等模板 | tcc-core/.../IdempotentTemplate.java |
 | TCC Dubbo 桥接 | payment-payment/.../config/DubboTccParticipant.java；错误码映射在 payment-common/.../FacadeSupport.java |
-| 支付编排 | payment-payment/.../service/PaymentService.java |
-| 事务性终态+outbox | payment-payment/.../service/PaymentCompletionListener.java |
-| outbox 投递 | payment-payment/.../service/OutboxDispatcher.java |
+| 支付编排 | payment-payment/.../service/PaymentService.java（pay :72 / refund :263） |
+| 资金单（充值/提现） | payment-payment/.../service/PaymentService.java#fundPay :161（biz_type TOPUP/WITHDRAW，见 §17.1） |
+| 事务性终态+outbox | payment-payment/.../service/PaymentCompletionListener.java（onConfirmed :44，5 参 insert + afterCommit 主投递） |
+| outbox 轮询兜底 | payment-payment/.../service/OutboxDispatcher.java#dispatchPending :38 |
+| outbox MQ 幂等投递 | payment-payment/.../service/OutboxDispatcher.java#deliverByEventBizId :73 |
+| RocketMQ 主投递 | payment-payment/.../mq/RocketMqOutboxPublisher.java（OutboxPublisher 接口 / MqConfig 装配 / MqProperties 开关，docker only） |
+| RocketMQ 消费 | payment-payment/.../mq/OutboxMessageListener.java（consumeMessage → deliverByEventBizId，失败 RECONSUME_LATER） |
 | 双调度 | payment-payment/.../service/PaymentScheduler.java |
-| 复式记账 | payment-accounting/.../service/AccountingService.java |
+| 复式记账 | payment-accounting/.../service/AccountingService.java（post :203 / entriesPage :108） |
+| 流水全局分页 | payment-accounting/.../mapper/EntryMapper.java（selectPage :25 / countPage :28，accountId 空=查总的） |
+| 风控限流抽象 | payment-risk/.../service/RateLimiter.java（InMemoryRateLimiter local / RedisRateLimiter docker Lua ZSET） |
+| 商户缓存 | payment-gateway/.../web/MerchantCache.java（docker Redis pp:openapi:app:<appId> TTL60s，读写异常降级直查） |
+| 序列方言 | payment-common/.../db/H2Sequence.java（H2 CREATE ALIAS→next_value_for；MySQL sequences 表+存储函数 LAST_INSERT_ID） |
+| MySQL DDL | 各域 resources/schema-mysql.sql（docker 一次性建表，sql.init.mode=never，见 §18.2） |
+| H2→MySQL 迁移 | tools/MigrateH2ToMySQL.java + migrate-h2-to-mysql.sh（只读复制 H2，INSERT IGNORE 去重，序列 GREATEST 回填） |
 | 订单状态机 | payment-trade/.../service/TradeService.java |
 | 渠道状态机 | payment-channel/.../service/ChannelService.java |
 | 通知推送 | payment-notify/.../service/NotifyPusher.java |
@@ -1110,8 +1167,9 @@ PP_PROFILE=docker python3 verify-pro.py   # docker profile 回归（需 source d
 
 ## 附录 C：数据字典（字段级 DDL）
 
-> 以下 DDL 逐字取自各域 `src/main/resources/schema.sql`，由 Spring SQL init 在启动时幂等执行（`CREATE ... IF NOT EXISTS`）。
+> 以下 DDL 逐字取自各域 `src/main/resources/schema.sql`（local H2），由 Spring SQL init 在启动时幂等执行（`CREATE ... IF NOT EXISTS`）。
 > 通用约定：主键多为 `VARCHAR` 业务 ID（前缀 + 序列）；时间戳统一 `BIGINT` 毫秒；金额统一 `BIGINT` 分；JSON 载荷用 `CLOB`。
+> **docker MySQL 方言**：各域另有 `schema-mysql.sql`（对空库执行一次，`sql.init.mode=never`），表结构/字段/索引与下文一致，差异仅在建表方言——`CLOB`→`LONGTEXT`、表尾 `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`、`biz_type`/`out_trade_no` 等列内联；序列不再用 `CREATE SEQUENCE`，改为 `sequences(name PK, value)` 表 + 存储函数 `next_value_for`（`UPDATE ... LAST_INSERT_ID(value+1)`），与 H2 的 `CREATE ALIAS next_value_for FOR "...H2Sequence.next"` 同名同签名，故 mapper 取号 SQL `SELECT next_value_for('seq_x')` 两端零改动（见 §18.2）。
 > 标注 legend：🔑 幂等/唯一键 ｜ 🔁 CAS 状态列 ｜ 🧊 冻结/余额权威 ｜ 📮 异步投递驱动列。
 
 ### C.1 member 库（payment-member）
@@ -1197,7 +1255,7 @@ CREATE TABLE IF NOT EXISTS tcc_branch_log (
     PRIMARY KEY (xid, branch_id, action)      -- 🔑 TCC 幂等/空回滚/防悬挂载体
 );
 CREATE TABLE IF NOT EXISTS idempotent_record (
-    biz_type   VARCHAR(32) NOT NULL,          -- TOPUP
+    biz_type   VARCHAR(32) NOT NULL,          -- TOPUP（充值）/ POST（通用过账，v1.3）
     biz_no     VARCHAR(64) NOT NULL,
     result     CLOB,                          -- 占位 NULL → 业务后回填结果 JSON
     created_at BIGINT      NOT NULL,
@@ -1395,7 +1453,8 @@ CREATE TABLE IF NOT EXISTS recon_report (
 | payment | dtx_transaction | (biz_type,biz_no) UNIQUE | 同支付单重复开启全局事务 |
 | accounting/channel/trade | tcc_branch_log | (xid,branch_id,action) PK | 补偿重试/网络重发/重启重放 |
 | accounting | transfer_record | biz_no PK | 过账兜底 |
-| accounting | idempotent_record | (TOPUP,bizNo) | 充值重试 |
+| accounting | idempotent_record | (TOPUP,bizNo)/(POST,bizNo) | 充值/通用过账重试 |
+| trade | trade_order | (merchant_id,out_trade_no) UNIQUE | 同商户同 outTradeNo 重复下单（回放既有订单） |
 | trade | idempotent_record | (REFUND_MARK,bizNo) | 退款标记重投 |
 | settle | idempotent_record + uk_settle_biz | (SETTLE_PAY,paymentId)/(SETTLE_REFUND,bizId) | outbox 至少一次重投 |
 | notify | idempotent_record | (NOTIFY,event:bizId) | outbox 至少一次重投 |
@@ -1436,20 +1495,25 @@ CREATE TABLE IF NOT EXISTS recon_report (
 | 方法 | 入参 | 返回 data | 主要错误 | 幂等键 |
 |---|---|---|---|---|
 | topup | TopupRequest{accountId,amount,bizNo} | Long（充值后余额） | A0400 amount/bizNo；A0404 账户；B0001 冻结 | (TOPUP,bizNo) |
+| post | PostRequest{bizNo,subject,refId,lines} | Void | A0400 借贷不平/账户；B0001 冻结/余额不足 | (POST,bizNo) |
 | balance | accountId | Long | — | 只读 |
 | balances | List\<accountIds> | Map\<id,Long> | — | 只读 |
 | entries | accountId, limit | List\<EntryDTO> | — | 只读（limit≤500） |
+| entriesPage | EntryQuery{accountId,bizNo,dir,keyword,page,size} | PageDTO\<EntryDTO> | — | 只读（accountId 空=跨账户查总的；size≤200，默认 20） |
 | transfer | bizNo | TransferDTO | A0404 | 只读 |
 | trial | — | TrialDTO{totalDebit,totalCredit,balanced,balanceSum,accounts,entries} | — | 只读 |
 
 `EntryDTO`：id/bizNo/accountId/dir/amount/balanceAfter/subject/refId/createdAt。
 `TransferDTO`：bizNo/lines[TransferLineDTO{accountId,dir,amount}]/subject/refId/reversed/createdAt。
+`PostRequest.lines`：List\<TransferLineDTO>，通用过账（v1.3，转账/提现镜像走此入口），借贷净额须为 0。
+`EntryQuery`：page 默认 1（`Math.max(page,1)`）、size 默认 20（≤0 取 20，上限 200）、`getOffset()=(page-1)*size`；dir=D/C 筛选，keyword 模糊匹配 subject/bizNo。
+`PageDTO<T>`：items/page/size/total(long)，`static of(items,page,size,total)`。
 
 ### D.4 TradeFacade
 
 | 方法 | 入参 | 返回 data | 主要错误 | 幂等键 |
 |---|---|---|---|---|
-| createOrder | OrderCreateRequest{merchantId,subject,amount} | OrderDTO | A0400 非商户/subject；B0001 商户冻结 | — |
+| createOrder | OrderCreateRequest{merchantId,subject,amount,outTradeNo?,bizType?} | OrderDTO | A0400 非商户/subject；B0001 商户冻结 | (merchantId,outTradeNo) UNIQUE 回放既有订单 |
 | listOrders | — | List\<OrderDTO> | — | 只读 |
 | getOrder | orderId | OrderDTO | A0404 | 只读 |
 | closeOrder | orderId | OrderDTO | A0409 非 CREATED | CAS |
@@ -1462,12 +1526,14 @@ CREATE TABLE IF NOT EXISTS recon_report (
 | 方法 | 入参 | 返回 data | 主要错误 | 幂等键 |
 |---|---|---|---|---|
 | pay | PayRequest{orderId,method,accountId,cardNo,requestId,callbackUrl} | PayResultDTO{payment,repeated} | A0400 requestId/method/账户/卡号；A0409 订单状态；B0001 余额不足/冻结/风控/渠道 | request_id |
+| fundPay | FundPayRequest{bizType,accountId,amount,requestId,callbackUrl} | PayResultDTO{payment,repeated} | A0400 bizType/requestId/amount；A0404 账户；B0001 余额不足（WITHDRAW）/冻结 | request_id |
 | refund | paymentId, RefundRequest{amount,requestId} | RefundResultDTO{payment,refundAmount,refundId} | A0400 amount；A0409 未成功；B0001 超退 | request_id |
 | listPayments | — | List\<PaymentDTO> | — | 只读 |
 | getPayment | paymentId | PaymentDTO | A0404 | 只读（轮询终态用） |
 
-`PaymentDTO`：id/orderId/method/payerAccountId/cardNo(脱敏)/merchantAccountId/amount/fee/status/refundedAmount/refundedFee/channelBizNo/failReason/requestId/xid/createdAt。
-> pay/refund 成功返回时支付单多为 PROCESSING（二阶段异步），客户端轮询 getPayment 至 SUCCESS/FAILED。`repeated=true` 表示幂等回放。
+`PaymentDTO`：id/orderId/bizType/method/payerAccountId/cardNo(脱敏)/merchantAccountId/amount/fee/status/refundedAmount/refundedFee/channelBizNo/failReason/requestId/xid/createdAt。
+`FundPayRequest`：bizType=TOPUP/WITHDRAW、accountId、amount(Long 分)、requestId（幂等键）、callbackUrl；充值/提现走完整 TCC 生成交易单+支付单（SYS_FUND 系统资金商户、fee=0、BALANCE、无渠道），见 §17.1。
+> pay/refund/fundPay 成功返回时支付单多为 PROCESSING（二阶段异步），客户端轮询 getPayment 至 SUCCESS/FAILED。`repeated=true` 表示幂等回放。资金单（TOPUP/WITHDRAW）不可退款，仅 TRADE 可退。
 
 ### D.6 CashierFacade
 
@@ -1707,39 +1773,41 @@ public <T> T execute(String bizType, String bizNo, Class<T> resultType, Supplier
 
 **为什么这样写**：占位（result=NULL）、业务、回填三步同事务。并发重复请求在唯一键上竞争：胜者执行业务并回填，败者要么读到完整结果（结果一致），要么读到 NULL 得到明确"处理中"（A0409），**绝不会重复执行业务**。相比"先查后插"消除了查-插窗口竞态。
 
-### E.8 支付编排流水线 — `payment-payment/.../service/PaymentService.java:64`
+### E.8 支付编排流水线 — `payment-payment/.../service/PaymentService.java:72`
 
 ```java
 public PayResultDTO pay(PayRequest request) {
-    requireRequestId(request.getRequestId());                 // :65 幂等键必填
-    // method 校验 BALANCE/CARD                                 :67
-    PaymentDO replay = paymentMapper.selectByRequestId(...);  // :70 ★ 回放先于状态检查
+    requireRequestId(request.getRequestId());                 // :73 幂等键必填
+    // method 校验 BALANCE/CARD                                 :75
+    PaymentDO replay = paymentMapper.selectByRequestId(...);  // :78 ★ 回放先于状态检查
     if (replay != null) return result(replay, true);
-    OrderDTO order = tradeFacade.getOrder(...).orThrow();     // :75 订单 CREATED 校验
-    // BALANCE: 付款户 ACTIVE + 余额足额 / CARD: 卡号必填        :80-93
-    long fee = MoneyUtil.fee(amount, feeBps);                 // :96 默认 60bps
-    try { paymentMapper.insert(payment); }                    // :114 insert-first
-    catch (DuplicateKeyException e) { return result(selectByRequestId(...), true); }  // :116 并发败者读胜者
-    RiskResultDTO riskResult = riskFacade.check(risk).orThrow();  // :127
-    if (!pass) { paymentMapper.finish(id,"FAILED",reason); throw ...; }  // :128 风控拒绝留痕
-    String xid = coordinator.begin("PAY", payment.getId());   // :134
-    paymentMapper.updateXid(payment.getId(), xid);
-    coordinator.registerBranch(xid,"accounting","PAY", accountingContext(...));   // :138
-    if (CARD) coordinator.registerBranch(xid,"channel","PAY", channelContext(...)); // :139
-    coordinator.registerBranch(xid,"trade","PAY", tradeContext(...));             // :142
-    coordinator.tryAll(xid);                                  // :143 同步 Try
-    coordinator.commitAsync(xid);                             // :144 异步二阶段
-    return result(require(payment.getId()), false);           // :145 立即返回 PROCESSING
+    OrderDTO order = tradeFacade.getOrder(...).orThrow();     // :83 订单 CREATED 校验
+    // BALANCE: 付款户 ACTIVE + 余额足额 / CARD: 卡号必填        :88-101
+    long fee = MoneyUtil.fee(amount, feeBps);                 // :104 默认 60bps
+    payment.setBizType("TRADE");                              // :109 商户交易（资金单走 fundPay 置 TOPUP/WITHDRAW）
+    try { paymentMapper.insert(payment); }                    // :124 insert-first
+    catch (DuplicateKeyException e) { return result(selectByRequestId(...), true); }  // :125 并发败者读胜者
+    RiskResultDTO riskResult = riskFacade.check(risk).orThrow();  // :136
+    if (!pass) { paymentMapper.finish(id,"FAILED",reason); throw ...; }  // :138 风控拒绝留痕
+    String xid = coordinator.begin("PAY", payment.getId());   // :143
+    paymentMapper.updateXid(payment.getId(), xid);            // :144
+    coordinator.registerBranch(xid,"accounting","PAY", accountingContext(...));   // :147
+    if (CARD) coordinator.registerBranch(xid,"channel","PAY", channelContext(...)); // :149
+    coordinator.registerBranch(xid,"trade","PAY", tradeContext(...));             // :151
+    coordinator.tryAll(xid);                                  // :152 同步 Try
+    coordinator.commitAsync(xid);                             // :153 异步二阶段
+    return result(require(payment.getId()), false);           // :154 立即返回 PROCESSING
 }
 ```
 
 **为什么这样写**：
-- 幂等预检（:70）先于订单状态检查——订单已 PAID 后同 requestId 回放仍返回原始结果而非 409（实测修复过的缺陷）。
-- insert-first（:114）+ DuplicateKey 回读（:116）：并发同 requestId 在唯一键竞争，败者读胜者结果。
+- 幂等预检（:78）先于订单状态检查——订单已 PAID 后同 requestId 回放仍返回原始结果而非 409（实测修复过的缺陷）。
+- insert-first（:124）+ DuplicateKey 回读（:125）：并发同 requestId 在唯一键竞争，败者读胜者结果。
 - 分支注册顺序 accounting→channel→trade：最可能失败的资金约束前置，Try 失败回滚成本最小。
 - 风控拒绝先把支付单落 FAILED 留痕再抛错，便于审计与对账。
+- 充值/提现走 `fundPay()`（:161）：同样 requireRequestId + 完整 TCC（账务+交易分支）+ 完结监听，但 bizType=TOPUP/WITHDRAW、SYS_FUND 系统资金商户、fee=0、BALANCE、无渠道分支，故清结算单/对账自然齐备（见 §17.1）。
 
-退款手续费按比例退（`PaymentService.java:165`）：
+退款手续费按比例退（`PaymentService.java:280-282`）：
 
 ```java
 long feeRefund = amount == remaining
@@ -1749,26 +1817,43 @@ long feeRefund = amount == remaining
 
 保证分账精确闭环、无一分钱残留。
 
-### E.9 事务性终态回调 — `payment-payment/.../service/PaymentCompletionListener.java:35`
+### E.9 事务性终态回调 — `payment-payment/.../service/PaymentCompletionListener.java:44`
 
 ```java
-public void onConfirmed(String xid) {                         // 在 driveConfirm 的同一事务内被调用
-    PaymentDO payment = paymentMapper.selectByXid(xid);
+public void onConfirmed(String xid) {                         // :44 在 driveConfirm 的同一本地事务内被调用
+    long now = System.currentTimeMillis();
+    long nextRetryAt = mqProps.isEnabled() ? now + mqProps.getFallbackGraceMs() : 0L;  // :46 MQ 模式留宽限期（默认 4000ms）
+    OutboxPublisher publisher = mqProps.isEnabled() ? publisherProvider.getIfAvailable() : null;  // :47 docker only
+    List<Runnable> publishes = new ArrayList<>();             // :48 收集 afterCommit 主投递任务
+
+    PaymentDO payment = paymentMapper.selectByXid(xid);       // :50
     if (payment != null && "PROCESSING".equals(payment.getStatus())) {
-        paymentMapper.finish(payment.getId(), "SUCCESS", null);             // :39 支付单翻转
-        outboxMapper.insert("SETTLE_PAY", payment.getId(), toJson(settle), now);   // :48
-        outboxMapper.insert("NOTIFY_PAY", payment.getId(), toJson(notify(...)), now); // :55
+        paymentMapper.finish(payment.getId(), "SUCCESS", null);                          // :52 支付单翻转
+        outboxMapper.insert("SETTLE_PAY", payment.getId(), settlePayload, nextRetryAt, now);  // :62 ★ 5 参（含 next_retry_at）
+        capture(publishes, publisher, "SETTLE_PAY", payment.getId(), settlePayload);          // :63
+        outboxMapper.insert("NOTIFY_PAY", payment.getId(), notifyPayload, nextRetryAt, now);  // :71
+        capture(publishes, publisher, "NOTIFY_PAY", payment.getId(), notifyPayload);          // :72
     }
-    RefundDO refund = refundMapper.selectByXid(xid);
+    RefundDO refund = refundMapper.selectByXid(xid);          // :75
     if (refund != null && "PROCESSING".equals(refund.getStatus())) {
-        refundMapper.finish(refund.getId(), "SUCCESS");
-        paymentMapper.updateRefunded(pay.getId(), refundedAmount+..., refundedFee+...);  // :62 累计退款
-        outboxMapper.insert("SETTLE_REFUND", ...); outboxMapper.insert("NOTIFY_REFUND", ...);
+        refundMapper.finish(refund.getId(), "SUCCESS");       // :77
+        paymentMapper.updateRefunded(pay.getId(), refundedAmount+..., refundedFee+...);  // :79 累计退款
+        outboxMapper.insert("SETTLE_REFUND", ..., nextRetryAt, now);   // :89 + capture :90
+        outboxMapper.insert("NOTIFY_REFUND", ..., nextRetryAt, now);   // :97 + capture :98
+    }
+    if (!publishes.isEmpty()) {                               // :102 事务提交后才发 MQ
+        if (TransactionSynchronizationManager.isSynchronizationActive())
+            registerSynchronization(afterCommit -> publishes.forEach(Runnable::run));  // :104-109
+        else publishes.forEach(Runnable::run);                // :111 无事务上下文则直接发
     }
 }
 ```
 
-**为什么这样写**：`"PROCESSING".equals(status)` 守卫保证回调重放幂等——已是终态则跳过。支付单翻转与 outbox 写入和全局终态同事务（E.3），三者原子。退款额外累计 refunded_amount/refunded_fee，供后续退款比例计算与终态翻转。
+**为什么这样写**：
+- `"PROCESSING".equals(status)` 守卫保证回调重放幂等——已是终态则跳过。支付单翻转与 outbox 写入和全局终态同本地事务（E.3），三者原子。退款额外累计 refunded_amount/refunded_fee，供后续退款比例计算与终态翻转。
+- **5 参 insert 的 `nextRetryAt`**：local=0（轮询立即可投）；docker=now+宽限期（`payment.mq.fallback-grace-ms`，默认 4000ms）。宽限期内轮询 `selectPending(now,...)` 不会选中该行，把首投让给 afterCommit 的 MQ 主投递；MQ 发送失败或超宽限仍未 DELIVERED，轮询才兜底——避免 MQ 与轮询短时间内重复投同一事件。
+- **afterCommit 才 publish**（:102-113）：MQ 消息只在本地事务提交后发出，杜绝"事务可能回滚却已发消息"。`RocketMqOutboxPublisher.publish`（:25）发送失败被吞掉（:35-37，事务已提交不能抛），outbox 行仍 PENDING 交轮询兜底——MQ 只是把投递从轮询加速为推送，不改变可靠性语义（见 §18.3）。
+- `capture`（:130-135）仅在 publisher 非空（docker）时收集任务；local 无 MQ，publishes 为空，纯靠轮询。
 
 ### E.10 outbox 可靠投递 — `payment-payment/.../service/OutboxDispatcher.java:38`
 
@@ -1793,37 +1878,47 @@ private void deliver(OutboxDO m) {                                          // :
         case "SETTLE_PAY" -> settleFacade.recordPay(fromJson(...)).orThrow();
         case "SETTLE_REFUND" -> settleFacade.recordRefund(fromJson(...)).orThrow();
         case "NOTIFY_PAY","NOTIFY_REFUND" -> notifyFacade.send(fromJson(...)).orThrow();
+        default -> throw new IllegalStateException("未知 outbox 事件: " + m.getEvent());  // :65
     }
+}
+
+// MQ 主投递入口（docker）：OutboxMessageListener.consumeMessage(:32) 解析 {event,bizId} 后调用
+public void deliverByEventBizId(String event, String bizId) {               // :73
+    OutboxDO m = outboxMapper.selectByEventBizId(event, bizId);             // :74
+    if (m == null || !"PENDING".equals(m.getStatus())) return;             // :75 已 DELIVERED/DEAD 或不存在则跳过（幂等守卫）
+    deliver(m);                                                            // :78 复用同一幂等 Dubbo 投递
+    outboxMapper.markDelivered(m.getId());                                 // :79
 }
 ```
 
 **为什么这样写**：至少一次投递；接收端 settle/notify 用 IdempotentTemplate 去重 → 恰好一次效果。投递失败退避重试，耗尽 DEAD 由对账"支付-清结算一致"项精确报出缺失笔数。双调度 `PaymentScheduler.java:16`（recover 5s）/`:21`（dispatch 3s）均 `fixedDelay`，单实例无重叠。
+**MQ 与轮询共用同一投递逻辑**：docker 模式 `OutboxMessageListener`（`@ConditionalOnProperty payment.mq.enabled=true`）消费 `PP_OUTBOX`，调 `deliverByEventBizId` 走与轮询完全相同的 `deliver`+`markDelivered`；`!PENDING` 守卫使 MQ 重投/轮询兜底/宽限期后重投都不会重复投递。消费抛错返回 `RECONSUME_LATER`（:40）由 broker 重投，轮询同时兜底；成功 `CONSUME_SUCCESS`（:43）。故 MQ 宕机/消费失败不丢消息，最坏退化为纯轮询（见 §18.3）。
 
-### E.11 账务复式记账 — `payment-accounting/.../service/AccountingService.java:177`
+### E.11 账务复式记账 — `payment-accounting/.../service/AccountingService.java:203`
 
 ```java
-public void post(String bizNo, List<TransferLineDTO> lines, ..., boolean reversed) {
-    validateLines(lines);                                     // :178 借贷平衡强校验（D==C）
-    checkAccounts(...);                                       // :179 非系统户 ACTIVE 校验
-    for (TransferLineDTO line : sorted(lines)) {              // :181 ★ 按 accountId 排序加锁 → 无死锁
-        BalanceDO balance = lockOrCreate(line.getAccountId());  // SELECT FOR UPDATE
+public void post(String bizNo, List<TransferLineDTO> lines, String subject, String refId, boolean reversed) {  // :203
+    validateLines(lines);                                     // :204 借贷平衡强校验（D==C，def :252）
+    checkAccounts(...);                                       // :205 非系统户 ACTIVE 校验（def :277）
+    for (TransferLineDTO line : sorted(lines)) {              // :207 ★ 按 accountId 排序加锁 → 无死锁（sorted def :318）
+        BalanceDO balance = lockOrCreate(line.getAccountId());  // :208 SELECT FOR UPDATE
         if ("D".equals(line.getDir())) {
             long available = balance.getBalance() - balance.getFrozen();
-            if (!isSystem(...) && available < amount) throw ...("可用余额不足");  // :187
+            if (!isSystem(...) && available < amount) throw ...("可用余额不足");  // :213-214
             newBalance = balance.getBalance() - amount;
         } else newBalance = balance.getBalance() + amount;
         balanceMapper.update(balance);
-        // 落分录 ledger_entry（含 balance_after 快照）          :198-210
+        // 落分录 ledger_entry（含 balance_after 快照）          :224-236
     }
-    try { transferMapper.insert(record); }                  // :219 biz_no PK 幂等兜底
-    catch (DuplicateKeyException e) { log.info("转账记录已存在（幂等）..."); }
+    try { transferMapper.insert(record); }                  // :245-246 biz_no PK 幂等兜底
+    catch (DuplicateKeyException e) { log.info("转账记录已存在（幂等）..."); }  // :247-248
 }
 ```
 
-TCC 三动作（`freeze:133` / `postAndUnfreeze:153` / `unfreeze:160`）：
+TCC 三动作（`freeze:159` / `postAndUnfreeze:179` / `unfreeze:186`）：
 
 ```java
-public void freeze(ctx) {            // Try：只冻借方非系统户
+public void freeze(ctx) {            // :159 Try：只冻借方非系统户
     for (line : sorted(ctx.getLines())) {
         if (!"D".equals(dir) || isSystem(accountId)) continue;
         BalanceDO b = lockOrCreate(...);
@@ -1831,23 +1926,24 @@ public void freeze(ctx) {            // Try：只冻借方非系统户
         b.setFrozen(b.getFrozen()+amount); balanceMapper.update(b);
     }
 }
-public void postAndUnfreeze(ctx) {   // Confirm：★ 先解冻再过账
-    unfreeze(ctx);                   // :155 否则全额退款时冻结额≥余额一半会误报可用不足
-    post(ctx.getBizNo(), ctx.getLines(), ..., reversed);
+public void postAndUnfreeze(ctx) {   // :179 Confirm：★ 先解冻再过账
+    unfreeze(ctx);                   // :181 否则全额退款时冻结额≥余额一半会误报可用不足
+    post(ctx.getBizNo(), ctx.getLines(), ..., reversed);  // :182
 }
-public void unfreeze(ctx) {          // Cancel：仅解冻，Math.max(0, frozen-amount) 防御
+public void unfreeze(ctx) {          // :186 Cancel：仅解冻，Math.max(0, frozen-amount) 防御（:196）
     ...
 }
 ```
 
-**为什么这样写**：排序加锁保证全局一致加锁顺序→无死锁；`lockOrCreate`（:268）并发开户竞争捕获 DuplicateKey 后加锁重读。Confirm 先解冻再过账的次序是实测修复的关键——过账的可用余额校验若受本笔冻结影响，全额退款会误报不足。系统户（SYS_ 前缀）可透支不冻。
+**为什么这样写**：排序加锁保证全局一致加锁顺序→无死锁；`lockOrCreate`（:294）并发开户竞争捕获 DuplicateKey 后加锁重读（:307-310）。Confirm 先解冻再过账的次序是实测修复的关键——过账的可用余额校验若受本笔冻结影响，全额退款会误报不足。系统户（SYS_ 前缀）可透支不冻。
+**流水查询**：`entries(accountId,limit)`（limit≤500）单账户最近分录；`entriesPage(EntryQuery)`（:108-114）跨账户全局分页——page 取 `Math.max(page,1)`、size ≤0 取 20 否则 `Math.min(size,200)`，`EntryMapper.selectPage`（:25）/`countPage`（:28）按 accountId/bizNo/dir/keyword 过滤，accountId 空即查总的（见 §17.2）。
 
 ### E.12 参与者装配与路由 — `payment-accounting/.../facade/AccountingTccFacadeImpl.java:15`
 
 ```java
 @DubboService(group = "accounting")                           // 同接口按 group 区分实现
 public class AccountingTccFacadeImpl implements TccParticipantFacade {
-    private final TccParticipantTemplate template;            // DtxAutoConfiguration 自动装配
+    private final TccParticipantTemplate template;            // TccAutoConfiguration（tcc-core）自动装配
     private final AccountingService accountingService;
     public Result<Void> tryAction(TccBranchRequest request) {
         return FacadeSupport.execute(() -> {
@@ -1870,7 +1966,7 @@ public class AccountingTccFacadeImpl implements TccParticipantFacade {
 public Map<String,TccParticipantFacade> asMap() { return Map.of("accounting",accounting,"channel",channel,"trade",trade); }
 ```
 
-**为什么这样写**：参与者只写业务 Runnable，幂等/空回滚/防悬挂全部由模板承担（关注点分离）。`PaymentConfig.java:14` 把 `asMap()` 注入 `TccCoordinator`，协调器按分支日志 participant 名路由——新增参与者只需注册 bean + registerBranch，协调器零改动。trade 参与者按 action 分流（`TradeTccFacadeImpl.java:29`：REFUND→checkRefundable/refundMark，PAY→reserve/markPaid/release）。
+**为什么这样写**：参与者只写业务 Runnable，幂等/空回滚/防悬挂全部由模板承担（关注点分离）。`PaymentConfig.java:15-17` 把 `asMap()` 经 `DubboTccParticipant.wrap` 注入 `TccCoordinator`，协调器按分支日志 participant 名路由——新增参与者只需注册 bean + registerBranch，协调器零改动。trade 参与者按 action 分流（`TradeTccFacadeImpl.java:29`：REFUND→checkRefundable/refundMark，PAY→reserve/markPaid/release）。
 
 ---
 
@@ -1897,12 +1993,12 @@ public Map<String,TccParticipantFacade> asMap() { return Map.of("accounting",acc
 | # | 场景 | 触发 | 系统行为 | 兜底 | 验证 |
 |---|---|---|---|---|---|
 | 9 | 分支幂等 | 补偿重试/网络重发 Confirm | tcc_branch_log 主键冲突或 status=CONFIRMED → 直接返回 | (xid,branch_id,action) PK | [C][码] |
-| 10 | 空回滚 | Try 超时/丢失，Cancel 先到 | 查无日志 → 落 CANCELLED 标记，不动业务，返回成功 | cancel:82 | [码] |
-| 11 | 防悬挂 | 被空回滚后迟到 Try | INSERT 冲突且既有 CANCELLED → 抛 CONFLICT 拒绝预留 | tryAction:45 | [码] |
-| 12 | Try 业务失败留痕 | freeze/preauth 抛异常 | 同事务 DELETE 日志 → 后续 Cancel 走空回滚，不误解冻 | tryAction:55 | [S] |
-| 13 | 已回滚分支被 Confirm | 状态错乱 | status=CANCELLED → 抛"已回滚分支不可提交" | confirm:71 | [码] |
-| 14 | 已提交分支被 Cancel | 状态错乱 | status=CONFIRMED → 抛"已提交分支不可回滚" | cancel:90 | [码] |
-| 15 | 凭空 Confirm | 无 Try 记录直接 Confirm | status=null → 抛"无 Try 记录" | confirm:65 | [码] |
+| 10 | 空回滚 | Try 超时/丢失，Cancel 先到 | 查无日志 → 落 CANCELLED 标记，不动业务，返回成功 | cancel:80 | [码] |
+| 11 | 防悬挂 | 被空回滚后迟到 Try | INSERT 冲突且既有 CANCELLED → 抛 CONFLICT 拒绝预留 | tryAction:43 | [码] |
+| 12 | Try 业务失败留痕 | freeze/preauth 抛异常 | 同事务 DELETE 日志 → 后续 Cancel 走空回滚，不误解冻 | tryAction:52 | [S] |
+| 13 | 已回滚分支被 Confirm | 状态错乱 | status=CANCELLED → 抛"已回滚分支不可提交" | confirm:69 | [码] |
+| 14 | 已提交分支被 Cancel | 状态错乱 | status=CONFIRMED → 抛"已提交分支不可回滚" | cancel:88 | [码] |
+| 15 | 凭空 Confirm | 无 Try 记录直接 Confirm | status=null → 抛"无 Try 记录" | confirm:63 | [码] |
 
 ### F.3 崩溃与宕机类（持久化恢复）
 
@@ -1910,10 +2006,10 @@ public Map<String,TccParticipantFacade> asMap() { return Map.of("accounting",acc
 |---|---|---|---|---|---|
 | 16 | 协调器一阶段崩溃（部分 Try） | Try 执行中宕机 | recover 见 TRYING：非全 TRY_OK → 回滚 | 分支日志持久化 | [D][码] |
 | 17 | 协调器一阶段崩溃（全 Try 成功） | Try 全成功未及 commit | recover 见 TRYING：全 TRY_OK → 提交 | recover:114 | [D][码] |
-| 18 | Confirm 部分成功崩溃 | 部分分支 CONFIRMED | recover 续驱，跳过 CONFIRMED 分支 | driveConfirm:142 | [C] |
+| 18 | Confirm 部分成功崩溃 | 部分分支 CONFIRMED | recover 续驱，跳过 CONFIRMED 分支 | driveConfirm:138 | [C] |
 | 19 | 终态事务未提交崩溃 | Confirm 成功但本地事务未落 | 参与者幂等跳过，终态事务重做 | 幂等+本地事务原子 | [码] |
 | 20 | 参与者宕机（渠道进程被杀） | CARD 支付 Confirm RPC 失败 | CONFIRMING 挂起，支付单 PROCESSING；渠道恢复后 recover 续驱收敛 SUCCESS | 退避重试 | [C] |
-| 21 | 全停重启 | stop.sh→run.sh | H2 落盘，schema IF NOT EXISTS 幂等建表，在途事务/outbox 恢复，快照一致 | 文件库持久化 | [D] |
+| 21 | 全停重启 | stop.sh→run.sh | local：H2 落盘 + schema IF NOT EXISTS 幂等建表；docker：MySQL pp_* 持久化（schema-mysql.sql 已建，sql.init.mode=never 不重跑）；在途事务/outbox 恢复，快照一致 | 数据库持久化 | [D] |
 | 22 | 终态后 outbox 未投递 | 提交后调度前宕机 | outbox 与终态同事务已落库，调度续投绝不丢 | 事务性 outbox | [D][码] |
 
 ### F.4 资金与业务边界
@@ -1930,8 +2026,8 @@ public Map<String,TccParticipantFacade> asMap() { return Map.of("accounting",acc
 | 30 | 全额退款可用余额误报 | 冻结额≥余额一半 | Confirm 先解冻再过账，校验不受本笔冻结影响 | postAndUnfreeze 次序 | [S] |
 | 31 | 退款乱序消息 | REFUND 先于 PAY 到 settle | recordRefund 找不到原 PAY → 投递失败进退避，天然等 PAY 先达 | 退避重试 | [码] |
 | 32 | 未扣款退款 | 原渠道交易非 CAPTURED | preauth(REFUND) 校验原交易抛 B0001 | 渠道校验 | [码] |
-| 33 | 并发开户竞争 | 首笔业务懒开户 | lockOrCreate INSERT 竞争捕获 DuplicateKey 后加锁重读 | lockOrCreate:268 | [码] |
-| 34 | 多账户转账死锁 | 并发交叉转账 | 按 accountId 排序加锁，全局一致顺序 → 无死锁 | sorted:292 | [码] |
+| 33 | 并发开户竞争 | 首笔业务懒开户 | lockOrCreate INSERT 竞争捕获 DuplicateKey 后加锁重读 | lockOrCreate:294 | [码] |
+| 34 | 多账户转账死锁 | 并发交叉转账 | 按 accountId 排序加锁，全局一致顺序 → 无死锁 | sorted:318 | [码] |
 
 ### F.5 异步投递与通知边界
 
@@ -1941,7 +2037,7 @@ public Map<String,TccParticipantFacade> asMap() { return Map.of("accounting",acc
 | 36 | outbox 重试耗尽 | attempts≥8 | 置 DEAD + error 日志，对账"支付-清结算一致"报缺失笔数 | DEAD+对账 | [码] |
 | 37 | 通知死链 | callbackUrl 不可达 | PENDING 退避 {5,10,20,40,80}s，attempts≥5 → FAILED（记录永久可查，商户可 PULL 补查） | NotifyPusher | [S] |
 | 38 | 无 callbackUrl | 商户未配回调 | 登记即 PULL 模式，不推送 | PULL | [S] |
-| 39 | TCC 补偿耗尽 | retry≥8 | 置 DEAD + error，待人工/对账介入，不无限重试 | bumpRetryIfPending:200 | [码] |
+| 39 | TCC 补偿耗尽 | retry≥8 | 置 DEAD + error，待人工/对账介入，不无限重试 | bumpRetryIfPending:196-197 | [码] |
 
 ### F.6 接入与安全边界
 
@@ -1972,3 +2068,19 @@ SYS_FEE 余额 = Σ结算净手续费          （手续费闭环）
 未预留资源 = 无分支日志              （Try 失败删日志，空回滚安全）
 全局终态 + 支付单翻转 + outbox 原子   （事务性 outbox，无中间态）
 ```
+
+### F.9 Docker 中间件与资金单边界（v1.7/v1.8，docker profile）
+
+> 中间件可插拔：MQ/Redis/ZK 故障均不破坏资金正确性，最坏退化为 local 等价路径或 fail-fast。验证标记 [码]=源码机制保证；docker 回归 smoke 79/79 + verify 22/22 + MQ Consume Diff=0。
+
+| # | 场景 | 触发 | 系统行为 | 兜底 | 验证 |
+|---|---|---|---|---|---|
+| 48 | MQ 主投递发送失败 | broker 宕机/网络断 | `RocketMqOutboxPublisher.publish` 吞异常（:35-37，事务已提交不能抛），outbox 行留 PENDING | 宽限期后轮询兜底投递 | [码] |
+| 49 | MQ 消费失败/重投 | 消费抛错或 broker 重投 | `consumeMessage` 返回 RECONSUME_LATER（:40）；`deliverByEventBizId` 的 `!PENDING` 守卫（:75）+ 接收端 IdempotentTemplate 去重 | 至少一次→恰好一次 | [码] |
+| 50 | MQ 整体不可用 | namesrv/broker 全停 | 主投递静默失败，退化为纯 outbox 轮询（3s），可靠性语义不变 | outbox 轮询兜底 | [码] |
+| 51 | Redis 限流不可用 | Redis 宕机 | `RedisRateLimiter.tryAcquire` 抛异常 → RiskService 不捕获 → FacadeSupport 映射 **B0002**（:33-35），支付受理 fail-fast | **不降级内存、不静默放行**（与商户缓存策略相反） | [码] |
+| 52 | Redis 商户缓存不可用 | Redis 宕机/读写异常 | `MerchantCache.get` 读异常回源 Dubbo（:48-50）、写异常吞掉（:55-57）、未启用/无 bean 直查 | 验签链路不中断，优雅降级 | [码] |
+| 53 | MySQL 建表缺失 | 空库未跑 schema-mysql.sql | `sql.init.mode=never` 不自动建表，启动/首笔 SQL 报错 | 部署时对空库一次性执行 schema-mysql.sql（见 §18.2/§18.6） | [码] |
+| 54 | Docker ZK 不可用 | 共享 ZK 2181 未起 | `run.sh --docker` /dev/tcp 探测失败提示先起栈；`HealthService.registryUp` docker 走 TCP `ruok`→`imok` 探活（800ms） | Dubbo 注册/发现依赖 ZK，须先起中间件 | [码] |
+| 55 | 提现余额不足 | fundPay WITHDRAW 且 balance<amount | 受理前置校验抛 B0001（:180-182），先于 createOrder/TCC，不留 PROCESSING 单 | 前置校验 + TCC freeze 双重 | [S] |
+| 56 | 资金单重复 requestId | 同 requestId 重试 fund.topup/withdraw | `selectByRequestId` 回放（:168）+ outTradeNo=requestId 订单幂等（:187）+ insert DuplicateKey 回读（:209） | request_id UNIQUE + 订单 (merchantId,outTradeNo) | [S] |
