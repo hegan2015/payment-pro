@@ -318,7 +318,10 @@ public class AccountingService {
             dto.setBalanced(head.getTotalDebit() != null && head.getTotalDebit().equals(head.getTotalCredit()));
             dto.setBalanceSum(head.getBalanceSum());
             dto.setAccounts(head.getAccounts());
-            dto.setEntries(head.getEntries());
+            // entries 为全账套分录总数（与明细账/全局流水分页同口径，多币种下不重不漏）；
+            // 借贷/余额/账户数仍保持 CNY 本位币口径（既有红线逐值不变）。
+            dto.setEntries((int) byCurrency.stream()
+                    .mapToLong(x -> x.getEntries() == null ? 0L : x.getEntries()).sum());
             dto.setSuspenseBalance(balanceOf(SYS_SUSPENSE));
             // ---- AC-6 additive ----
             dto.setBaseCurrency(BASE_CURRENCY);

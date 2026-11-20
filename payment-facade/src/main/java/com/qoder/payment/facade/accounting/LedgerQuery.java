@@ -25,6 +25,8 @@ public class LedgerQuery implements Serializable {
     private Long bizDate;
     private Long dateFrom;
     private Long dateTo;
+    /** additive：币种账套过滤。缺省 null = 全账套（与 trial.entries/全局流水分页同口径）；显式传值查该账套（CNY 含存量 NULL）。 */
+    private String currency;
     private int page = 1;
     private int size = 20;
 

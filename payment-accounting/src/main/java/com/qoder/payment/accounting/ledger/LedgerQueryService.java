@@ -110,6 +110,7 @@ public class LedgerQueryService {
         LedgerQuery q = query == null ? new LedgerQuery() : query;
         q.setPage(Math.max(q.getPage(), 1));
         q.setSize(q.getSize() <= 0 ? 20 : Math.min(q.getSize(), 200));
+        // 明细账默认全账套（与全局流水分页/trial.entries 同口径）；显式 currency 可查单币种账套。
         return readYourWrite(() -> {
             long total = entryMapper.countLedgerPage(q);
             List<EntryDTO> items = entryMapper.selectLedgerPage(q).stream().map(LedgerQueryService::toEntryDTO).toList();

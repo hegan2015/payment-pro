@@ -144,6 +144,7 @@ public class LedgerController {
                                                @RequestParam(required = false) Long bizDate,
                                                @RequestParam(required = false) Long dateFrom,
                                                @RequestParam(required = false) Long dateTo,
+                                               @RequestParam(required = false) String currency,
                                                @RequestParam(defaultValue = "1") int page,
                                                @RequestParam(defaultValue = "20") int size) {
         LedgerQuery query = new LedgerQuery();
@@ -155,6 +156,7 @@ public class LedgerController {
         query.setBizDate(bizDate);
         query.setDateFrom(dateFrom);
         query.setDateTo(dateTo);
+        query.setCurrency(currency);
         query.setPage(page);
         query.setSize(size);
         return GatewaySupport.of(accountingFacade.detailLedger(query));

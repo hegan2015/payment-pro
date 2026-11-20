@@ -94,6 +94,8 @@ public interface EntryMapper {
             + "<if test='bizDate != null'> AND biz_date = #{bizDate}</if>"
             + "<if test='dateFrom != null'> AND created_at &gt;= #{dateFrom}</if>"
             + "<if test='dateTo != null'> AND created_at &lt; #{dateTo}</if>"
+            + "<if test='currency != null and currency != \"\"'> AND (currency = #{currency}"
+            + " OR (#{currency} = 'CNY' AND currency IS NULL))</if>"
             + "</where>";
 
     /** AC-4 明细账：跨片 ORDER BY seq DESC + LIMIT/OFFSET 由归并引擎处理（不重不漏）。 */
