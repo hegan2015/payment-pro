@@ -28,28 +28,45 @@ nav#ppNav { display:block; width:244px; flex:none; padding:0; gap:0;
 .pp-nav-tools .pp-tool { flex:1; }
 .pp-tool:hover { border-color:var(--primary); color:var(--primary); }
 
-.pp-grp { border-bottom:1px solid #f1f5f9; }
+/* ---------- 侧栏菜单（专业后台风格：线条图标 + 小节分组 + 树形缩进 + 选中指示条） ---------- */
+.pp-grp { padding:2px 0; }
 .pp-grp[hidden] { display:none; }
-.pp-grp-head { display:flex; align-items:center; gap:8px; padding:9px 12px; cursor:pointer;
-  font-size:12px; color:var(--muted); font-weight:600; user-select:none; }
-.pp-grp-head:hover { background:#f8fafc; color:var(--text); }
-.pp-grp-head .pp-caret { margin-left:auto; font-size:10px; transition:transform .15s; }
+.pp-grp + .pp-grp { margin-top:2px; }
+.pp-grp-head { display:flex; align-items:center; gap:9px; padding:8px 10px; margin:0 8px;
+  border-radius:9px; cursor:pointer; font-size:12.5px; color:#475569; font-weight:600;
+  user-select:none; letter-spacing:.01em; transition:background .15s,color .15s; }
+.pp-grp-head:hover { background:#f1f5f9; color:#0f172a; }
+.pp-grp-head .pp-caret { margin-left:auto; font-size:9px; color:#94a3b8; transition:transform .18s ease; }
 .pp-grp.collapsed .pp-caret { transform:rotate(-90deg); }
 .pp-grp.collapsed .pp-grp-body { display:none; }
 .pp-grp-head.on { color:var(--primary-dark); }
-.pp-grp-body { padding-bottom:6px; }
-.pp-grp-idx { font-size:10px; color:#94a3b8; font-variant-numeric:tabular-nums; }
+.pp-grp-body { padding:2px 0 6px; }
+.pp-grp-idx { display:none; }
 
-nav#ppNav button { display:flex; width:100%; text-align:left; gap:8px; align-items:center;
+nav#ppNav button { display:flex; width:100%; text-align:left; gap:9px; align-items:center;
   border:none; background:none; border-bottom:none; border-left:3px solid transparent;
-  padding:7px 12px 7px 13px; font-size:13px; color:var(--text); cursor:pointer; }
-nav#ppNav button:hover { background:#f1f5f9; }
+  padding:7px 10px 7px 20px; margin:1px 0; font-size:13px; color:#334155; cursor:pointer;
+  border-radius:0 8px 8px 0; transition:background .13s,color .13s; }
+nav#ppNav button:hover { background:#f1f5f9; color:#0f172a; }
 nav#ppNav button.active { color:var(--primary); background:var(--info-soft);
   border-left-color:var(--primary); border-bottom-color:transparent; font-weight:600; }
 nav#ppNav button[hidden] { display:none; }
-.pp-ico { flex:none; width:20px; height:20px; border-radius:6px; background:#eef2f7; color:#475569;
-  font-size:11px; display:flex; align-items:center; justify-content:center; }
-nav#ppNav button.active .pp-ico { background:var(--primary); color:#fff; }
+
+/* 分组图标：28px 瓦片承托线条 SVG，默认透明底，悬停/选中才着色 */
+.pp-grp-head .pp-ico { flex:none; width:28px; height:28px; border-radius:8px; background:transparent;
+  color:#64748b; display:flex; align-items:center; justify-content:center; transition:background .15s,color .15s; }
+.pp-grp-head:hover .pp-ico { background:#e2e8f0; color:#334155; }
+.pp-grp-head .pp-ico svg { display:block; }
+.pp-grp-head.on .pp-ico { background:var(--info-soft); color:var(--primary); }
+
+/* 页面级图标：去掉单字灰块，改树形圆点 */
+nav#ppNav button .pp-ico { flex:none; width:16px; height:16px; border-radius:0; background:none;
+  font-size:0; color:inherit; display:flex; align-items:center; justify-content:center; }
+nav#ppNav button .pp-ico::before { content:''; width:5px; height:5px; border-radius:50%;
+  background:currentColor; opacity:.38; transition:opacity .13s,transform .13s; }
+nav#ppNav button:hover .pp-ico::before { opacity:.7; }
+nav#ppNav button.active .pp-ico { background:none; color:var(--primary); }
+nav#ppNav button.active .pp-ico::before { opacity:1; transform:scale(1.25); }
 .pp-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .pp-soon { flex:none; font-size:10px; color:#94a3b8; border:1px solid var(--border);
   border-radius:999px; padding:0 6px; }
@@ -65,13 +82,29 @@ nav#ppNav button.active .pp-ico { background:var(--primary); color:#fff; }
 .pp-crumb .pp-recent button:hover { border-color:var(--primary); color:var(--primary); }
 main { padding-top:12px; }
 
-/* ---------- 窄屏 / 手动折叠：图标栏 ---------- */
-body.pp-rail nav#ppNav { width:58px; }
+/* ---------- 窄屏 / 手动折叠：图标栏（瓦片 + 悬停浮层组名 + 选中指示条） ---------- */
+body.pp-rail nav#ppNav { width:64px; }
 body.pp-rail .pp-jump-wrap, body.pp-rail .pp-nav-tools,
 body.pp-rail .pp-grp-name, body.pp-rail .pp-grp-idx, body.pp-rail .pp-caret,
 body.pp-rail nav#ppNav button .pp-label, body.pp-rail .pp-soon { display:none; }
-body.pp-rail .pp-grp-head { justify-content:center; padding:8px 0; }
-body.pp-rail nav#ppNav button { justify-content:center; padding:8px 0; }
+body.pp-rail .pp-grp { padding:0; }
+body.pp-rail .pp-grp + .pp-grp { margin-top:0; }
+body.pp-rail .pp-grp-head { justify-content:center; padding:5px 0; margin:2px 8px; position:relative; }
+body.pp-rail .pp-grp-head .pp-ico { width:40px; height:40px; border-radius:11px; }
+body.pp-rail .pp-grp-head .pp-ico svg { width:20px; height:20px; }
+body.pp-rail nav#ppNav .pp-grp-head.on .pp-ico { background:var(--primary); color:#fff;
+  box-shadow:0 4px 12px rgba(22,119,255,.32); }
+body.pp-rail .pp-grp-head.on::before { content:''; position:absolute; left:-8px; top:50%;
+  transform:translateY(-50%); width:3px; height:22px; border-radius:0 3px 3px 0; background:var(--primary); }
+/* 悬停浮层组名（rail 态无文字，靠浮层辨识） */
+body.pp-rail .pp-grp-head::after { content:attr(data-tip); position:absolute; left:calc(100% + 10px); top:50%;
+  transform:translateY(-50%) translateX(-4px); background:#0f172a; color:#fff; font-size:12px; font-weight:500;
+  padding:5px 10px; border-radius:7px; white-space:nowrap; opacity:0; pointer-events:none;
+  transition:opacity .14s ease,transform .14s ease; box-shadow:0 6px 18px rgba(15,23,42,.28); z-index:40; }
+body.pp-rail .pp-grp-head:hover::after, body.pp-rail .pp-grp-head:focus-visible::after {
+  opacity:1; transform:translateY(-50%) translateX(0); }
+body.pp-rail nav#ppNav button { justify-content:center; padding:6px 0; margin:0; border-radius:0; }
+body.pp-rail nav#ppNav button .pp-ico { width:16px; height:16px; }
 body.pp-rail .pp-nav-top { padding:8px 6px; }
 body.pp-rail #ppNavRail { display:none; }
 body.pp-rail .pp-rail-only { display:block; }

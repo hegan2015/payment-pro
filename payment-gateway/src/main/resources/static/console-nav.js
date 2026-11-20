@@ -18,6 +18,23 @@
  *     模块末尾必须显式 window.PPX = PPX（顶层 const 不会自动成为 window 属性）。
  * ===================================================================== */
 
+/* 分组图标：内联 SVG（20×20，stroke=currentColor，零外部依赖）。rail 折叠态与展开态共用。 */
+const PP_SVG = (p) => '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
+const PP_GRP_SVG = {
+  overview:   PP_SVG('<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
+  trade:      PP_SVG('<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>'),
+  payment:    PP_SVG('<rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M2 10h20"/><path d="M6 15h4"/>'),
+  accounting: PP_SVG('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M9 7h7M9 11h5"/>'),
+  settle:     PP_SVG('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>'),
+  channel:    PP_SVG('<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/>'),
+  risk:       PP_SVG('<path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10Z"/><path d="M12 8v4"/><path d="M12 15.5h.01"/>'),
+  recon:      PP_SVG('<path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/>'),
+  member:     PP_SVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
+  notify:     PP_SVG('<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'),
+  openapi:    PP_SVG('<path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/>'),
+  platform:   PP_SVG('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>')
+};
+
 const PP_IA = [
   { key:'overview', name:'总览', icon:'总', pages:[
     { tab:'arch',   name:'服务拓扑与健康', perm:'', loader:'loadArch' },
@@ -154,8 +171,8 @@ const PPNav = {
     if (!nav) return;
     const groups = PP_IA.map((g, i) => `
       <div class="pp-grp${this.state.collapsed[g.key] ? ' collapsed' : ''}" data-grp="${esc(g.key)}">
-        <div class="pp-grp-head" role="button" tabindex="0" data-grp-head="${esc(g.key)}" title="${esc(g.name)}">
-          <span class="pp-ico">${esc(g.icon)}</span><span class="pp-grp-name">${esc(g.name)}</span>
+        <div class="pp-grp-head" role="button" tabindex="0" data-grp-head="${esc(g.key)}" title="${esc(g.name)}" data-tip="${esc(g.name)}">
+          <span class="pp-ico">${PP_GRP_SVG[g.key] || esc(g.icon)}</span><span class="pp-grp-name">${esc(g.name)}</span>
           <span class="pp-grp-idx">${i + 1}</span><span class="pp-caret">▾</span>
         </div>
         <div class="pp-grp-body">${g.pages.map(p => `
