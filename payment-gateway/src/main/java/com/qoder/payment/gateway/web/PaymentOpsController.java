@@ -82,6 +82,23 @@ public class PaymentOpsController {
         return deny != null ? deny : GatewaySupport.of(paymentFacade.repairCloseRace(id));
     }
 
+    /**
+     * P360 受控终态修复：dtx=CONFIRMED 且凭证齐全的历史竞态脏单 FAILED→SUCCESS，只翻状态不动资金。
+     * 二次认证 + 大额双人复核由 StepUpAuthInterceptor 闸门承担；操作人恒取会话用户。
+     */
+    @PostMapping("/payments/{id}/repair-terminal")
+    public ResponseEntity<Object> repairTerminal(@PathVariable String id,
+                                                 @RequestBody(required = false) Map<String, Object> body,
+                                                 @RequestHeader(value = "X-Step-Up-Token", required = false) String token) {
+        ResponseEntity<Object> deny = guard(token, "payment:refund");
+        if (deny != null) {
+            return deny;
+        }
+        return GatewaySupport.of(paymentFacade.repairTerminal(
+                id, str(body, "reason"), str(body, "requestId"),
+                com.qoder.payment.gateway.security.AuditSupport.currentUsername()));
+    }
+
     // ---------------- P-3 分账编排 ----------------
 
     @PostMapping("/payments/{id}/share")

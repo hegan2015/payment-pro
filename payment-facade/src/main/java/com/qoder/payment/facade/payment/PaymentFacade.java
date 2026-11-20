@@ -60,6 +60,12 @@ public interface PaymentFacade {
     /** P-5 关闭竞态悬挂修复（存量兜底，幂等）：CLOSED 单晚到分支冻结/订单 PAYING 的补偿释放。 */
     Result<PaymentDTO> repairCloseRace(String paymentId);
 
+    /**
+     * P360 受控终态修复：dtx=CONFIRMED 且凭证齐全的历史竞态脏单 FAILED→SUCCESS。
+     * 只翻状态不动资金；前置不满足 409；大额双人复核/二次认证由网关闸门承担。
+     */
+    Result<java.util.Map<String, Object>> repairTerminal(String paymentId, String reason, String requestId, String operator);
+
     // ==================================================================
     // P2 · E 泳道 P-7 营销抵扣编排 —— 全部 additive。
     // 上方既有方法签名/语义/幂等键一字未改；pay(PayRequest) 的 marketing 字段缺省 null

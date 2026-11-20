@@ -132,6 +132,11 @@ public class PaymentFacadeImpl implements PaymentFacade {
         return FacadeSupport.execute(() -> closeService.repairCloseRace(paymentId));
     }
 
+    @Override
+    public Result<java.util.Map<String, Object>> repairTerminal(String paymentId, String reason, String requestId, String operator) {
+        return FacadeSupport.execute(() -> closeService.repairTerminal(paymentId, reason, requestId, operator));
+    }
+
     // ================= P2 · E 泳道 P-7 营销抵扣编排 additive（既有方法一字未改） =================
 
     @Override

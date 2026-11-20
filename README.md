@@ -1482,9 +1482,16 @@ SYS_DEPOSIT 复用既有 2006 科目；SYS_ADVANCE 暂落 2999 待映射（申�
 - 两处**断言本身写错**（非产品缺陷）：零悬挂允许集漏 `REFUNDED/PARTIAL_REFUNDED`（本就是终态）；`routedCount` 是列表 `[{'c':31}]` 却与整数 Σ 比（恒 False，数据实际正确）
 - 收尾清理 `dissolve` 409 属合法拒绝（子订单未释放），改非致命不中断套件
 
-### 21.11 P2 剩余
+### 21.11 P2 剩余与收口
 - **I-1 ZK 集群化**：计划标注「可选」，**用户批准不做**，列入生产部署必改清单（当前单节点）
-- **I-6 tcc-core 参与者自注册**：待实现。现状 `TccParticipants` 硬编码 3 个 `@DubboReference`（accounting/channel/trade）+ `Map.of`，新增参与者域须改该类；目标按 Dubbo group 从注册中心自动发现
+- **I-6 tcc-core 参与者自注册**：**已实现**。`TccParticipants` 不再为每个新参与者域硬编码字段：已知三参与者（accounting/channel/trade）保留 `@DubboReference` 保底；新增域只需在 `payment.tcc.participant-groups` 追加 group（逗号分隔、可 Apollo 热更），按需建 `ReferenceConfig` 引用并缓存，**无需改代码**。协调器持**活视图**（只按名 `get(group)` 按需解析），避免启动期 eagerly 建引用失败。
+  - 取舍说明：首版尝试注册中心 introspection（`ModuleModel.getRegistryManager()`）在 Dubbo 3.2.14 不存在该 API，编译失败；改为配置驱动 + 保底引用，语义等价（新域暴露接口 + 配置声明即纳入）且零注册中心内部 API 依赖。
+- **P360 受控终态修复**：**已实现** `POST /api/payments/{id}/repair-terminal`（`PaymentCloseService.repairTerminal`）。
+  - 前置（任一不满足 409，绝不动状态）：单存在且 FAILED；xid 非空且 **dtx==CONFIRMED**（权威依据）；账务凭证齐全且 **Σ借方==支付金额**（COMBO 逐腿归集）；订单 PAID 且指向本单。
+  - 执行：仅 `casRepairTerminal`（`UPDATE ... SET status='SUCCESS', fail_reason=NULL WHERE id=? AND status='FAILED'`，恰 1 行才生效）；**不新增/删除凭证、不动任何账户余额**。
+  - 闸门：恒需二次认证；大额走 `reviewGate("REPAIR_TERMINAL", requestId, amount, ...)` 双人复核（A0428）；操作人恒取会话用户。
+  - 幂等：翻状态后为 SUCCESS，重复调用命中前置失败返回 409，不重复翻状态/不重复审计。
+  - 验证：`verify-terminal-repair.py`（闸门/前置/资金快照分毫不动/试算 D=C 不变/对账六项 pass/语义违规计数 −1/幂等/非法路径/审计留痕）。
 
 ---
 

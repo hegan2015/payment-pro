@@ -59,14 +59,12 @@ nav#ppNav button[hidden] { display:none; }
 .pp-grp-head .pp-ico svg { display:block; }
 .pp-grp-head.on .pp-ico { background:var(--info-soft); color:var(--primary); }
 
-/* 页面级图标：去掉单字灰块，改树形圆点 */
-nav#ppNav button .pp-ico { flex:none; width:16px; height:16px; border-radius:0; background:none;
-  font-size:0; color:inherit; display:flex; align-items:center; justify-content:center; }
-nav#ppNav button .pp-ico::before { content:''; width:5px; height:5px; border-radius:50%;
-  background:currentColor; opacity:.38; transition:opacity .13s,transform .13s; }
-nav#ppNav button:hover .pp-ico::before { opacity:.7; }
-nav#ppNav button.active .pp-ico { background:none; color:var(--primary); }
-nav#ppNav button.active .pp-ico::before { opacity:1; transform:scale(1.25); }
+/* 页面级（二级）图标：保留汉字做法（用户指定），小瓦片承托单字 */
+nav#ppNav button .pp-ico { flex:none; width:20px; height:20px; border-radius:6px; background:#eef2f7;
+  color:#475569; font-size:11px; line-height:1; display:flex; align-items:center; justify-content:center;
+  transition:background .13s,color .13s; }
+nav#ppNav button:hover .pp-ico { background:#e2e8f0; color:#334155; }
+nav#ppNav button.active .pp-ico { background:var(--primary); color:#fff; }
 .pp-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .pp-soon { flex:none; font-size:10px; color:#94a3b8; border:1px solid var(--border);
   border-radius:999px; padding:0 6px; }
@@ -104,7 +102,7 @@ body.pp-rail .pp-grp-head::after { content:attr(data-tip); position:absolute; le
 body.pp-rail .pp-grp-head:hover::after, body.pp-rail .pp-grp-head:focus-visible::after {
   opacity:1; transform:translateY(-50%) translateX(0); }
 body.pp-rail nav#ppNav button { justify-content:center; padding:6px 0; margin:0; border-radius:0; }
-body.pp-rail nav#ppNav button .pp-ico { width:16px; height:16px; }
+body.pp-rail nav#ppNav button .pp-ico { width:20px; height:20px; }
 body.pp-rail .pp-nav-top { padding:8px 6px; }
 body.pp-rail #ppNavRail { display:none; }
 body.pp-rail .pp-rail-only { display:block; }

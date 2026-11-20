@@ -14,7 +14,9 @@ import com.qoder.payment.facade.trade.TradeTccContext;
 import com.qoder.payment.payment.convert.PaymentConverter;
 import com.qoder.payment.payment.dataobject.CloseLogDO;
 import com.qoder.payment.payment.dataobject.PaymentDO;
+import com.qoder.payment.payment.dataobject.PaymentLegDO;
 import com.qoder.payment.payment.mapper.CloseLogMapper;
+import com.qoder.payment.payment.mapper.PaymentLegMapper;
 import com.qoder.payment.payment.mapper.PaymentMapper;
 import com.qoder.payment.payment.mapper.RefundMapper;
 import com.qoder.payment.payment.mapper.ShareOrderMapper;
@@ -62,6 +64,8 @@ import java.util.Map;
 public class PaymentCloseService {
 
     private final PaymentMapper paymentMapper;
+    private final PaymentLegMapper legMapper;
+    private final com.qoder.payment.payment.mapper.OutboxMapper outboxMapper;
     private final RefundMapper refundMapper;
     private final ShareOrderMapper shareOrderMapper;
     private final CloseLogMapper closeLogMapper;
@@ -75,6 +79,9 @@ public class PaymentCloseService {
 
     @DubboReference
     private TradeFacade tradeFacade;
+
+    @DubboReference
+    private com.qoder.payment.facade.accounting.AccountingFacade accountingFacade;
 
     // ------------------------------------------------------------------ 关闭
 
@@ -356,6 +363,107 @@ public class PaymentCloseService {
         log.info("关闭竞态修复 paymentId={} xid={} branches={} orderStatus={}",
                 paymentId, xid, branches.size(), after.getStatus());
         return PaymentConverter.toDTO(require(paymentId));
+    }
+
+    /**
+     * P360 受控终态修复：历史 TCC confirm/cancel 竞态把「dtx 已 CONFIRMED、资金已划转」的单
+     * 误置 FAILED。本方法在**严格前置校验**后仅做 FAILED→SUCCESS 的 CAS 翻状态，
+     * **不新增/删除任何凭证、不动任何账户余额**（资金本就正确，错的是状态标签）。
+     *
+     * <p>前置（任一不满足即 409，绝不动状态）：
+     * ① 单存在且 FAILED；② xid 非空且 dtx==CONFIRMED（权威依据）；
+     * ③ 账务凭证齐全且 Σ借方==支付金额（COMBO 逐腿归集）；④ 订单 PAID 且指向本单。
+     *
+     * <p>幂等：翻状态后单为 SUCCESS，重复调用命中前置①失败返回 409，不重复翻状态/不重复审计。
+     * 大额双人复核与二次认证由网关闸门承担（StepUpAuthInterceptor）。
+     */
+    public Map<String, Object> repairTerminal(String paymentId, String reason, String requestId, String operator) {
+        PaymentDO payment = paymentMapper.selectById(paymentId);
+        if (payment == null) {
+            throw new BizException(ResultCode.NOT_FOUND, "支付单不存在: " + paymentId);
+        }
+        if (!"FAILED".equals(payment.getStatus())) {
+            throw new BizException(ResultCode.CONFLICT, "仅 FAILED 单可执行受控终态修复: " + payment.getStatus());
+        }
+        String xid = payment.getXid();
+        if (xid == null || xid.isBlank()) {
+            throw new BizException(ResultCode.CONFLICT, "无分布式事务记录，不可判定权威终态: " + paymentId);
+        }
+        GlobalStatus dtx = coordinator.status(xid);
+        if (dtx != GlobalStatus.CONFIRMED) {
+            throw new BizException(ResultCode.CONFLICT,
+                    "权威 dtx 非 CONFIRMED（" + dtx + "），不可修复为 SUCCESS: " + paymentId);
+        }
+        List<PaymentLegDO> legs = legMapper.selectByPaymentId(paymentId);
+        long debit = 0;
+        StringBuilder voucherBiz = new StringBuilder();
+        if (legs.isEmpty()) {
+            debit = voucherDebit(paymentId);
+            voucherBiz.append(paymentId);
+        } else {
+            for (PaymentLegDO leg : legs) {
+                debit += voucherDebit(leg.getId());
+                if (voucherBiz.length() > 0) voucherBiz.append(',');
+                voucherBiz.append(leg.getId());
+            }
+        }
+        if (debit != payment.getAmount()) {
+            throw new BizException(ResultCode.CONFLICT,
+                    "凭证不齐或 Σ借方≠金额（" + debit + " vs " + payment.getAmount() + "），不可修复: " + paymentId);
+        }
+        OrderDTO order = tradeFacade.getOrder(payment.getOrderId()).orThrow();
+        if (!"PAID".equals(order.getStatus()) || !paymentId.equals(order.getPaymentId())) {
+            throw new BizException(ResultCode.CONFLICT,
+                    "订单非 PAID 或不指向本单（" + order.getStatus() + "），不可修复: " + paymentId);
+        }
+        int flipped = paymentMapper.casRepairTerminal(paymentId);
+        if (flipped != 1) {
+            throw new BizException(ResultCode.CONFLICT, "终态修复让位（状态已变更）: " + paymentId);
+        }
+        mirror(paymentId);
+        // 补发结算义务：历史 FAILED 标签曾抑制 SETTLE_PAY，翻正后须与正常支付成功同口径落 outbox，
+        // 否则对账「支付-清结算一致」判 ONE_SIDED。只补结算事件，不动资金/凭证。
+        com.qoder.payment.facade.settle.SettlePayRequest settle = new com.qoder.payment.facade.settle.SettlePayRequest();
+        settle.setPaymentId(paymentId);
+        settle.setOrderId(payment.getOrderId());
+        settle.setMerchantId(payment.getMerchantId());
+        settle.setAmount(payment.getAmount());
+        settle.setFee(payment.getFee() == null ? 0L : payment.getFee());
+        settle.setMethod(payment.getMethod());
+        long now = System.currentTimeMillis();
+        outboxMapper.insertRouted("SETTLE_PAY", paymentId,
+                com.qoder.tcc.TccContextUtil.toJson(settle), now, now, null);
+        log.warn("P360 受控终态修复 paymentId={} xid={} before=FAILED after=SUCCESS voucher={} operator={} requestId={} reason={}",
+                paymentId, xid, voucherBiz, operator, requestId, reason);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("id", paymentId);
+        out.put("before", "FAILED");
+        out.put("after", "SUCCESS");
+        out.put("authorityXid", xid);
+        out.put("voucherBizNo", voucherBiz.toString());
+        out.put("repaired", true);
+        out.put("operator", operator);
+        out.put("requestId", requestId);
+        return out;
+    }
+
+    /** 单张凭证 Σ借方；凭证不存在返回 -1（触发前置③失败）。 */
+    private long voucherDebit(String bizNo) {
+        com.qoder.payment.facade.accounting.EntryQuery q = new com.qoder.payment.facade.accounting.EntryQuery();
+        q.setBizNo(bizNo);
+        q.setPage(1);
+        q.setSize(200);
+        com.qoder.payment.facade.common.PageDTO<com.qoder.payment.facade.accounting.EntryDTO> page =
+                accountingFacade.entriesPage(q).orThrow();
+        List<com.qoder.payment.facade.accounting.EntryDTO> items = page.getItems();
+        if (items == null || items.isEmpty()) {
+            return -1;
+        }
+        long sum = 0;
+        for (com.qoder.payment.facade.accounting.EntryDTO e : items) {
+            if ("D".equals(e.getDir())) sum += e.getAmount() == null ? 0 : e.getAmount();
+        }
+        return sum;
     }
 
     // ------------------------------------------------------------------ 内部

@@ -1407,7 +1407,7 @@ graph TD
 | X-4 | 签约/代扣域归属 | ✅ | p2-F | **归属决策:归 channel 域(payment-channel/.../sign),不新建模块/进程**。理由:协议本质是渠道侧授权凭证,与 CH-2a ChannelAdapter SPI 同域直接复用;sign_* 与 channel_trade 同库 ⇒ 协议状态+扣款单+事件 outbox 单本地事务原子;零新进程 ⇒ 13/13 硬断言天然不破、不占已满 XXL 端口(9994-9998),用 JobHandler+@Scheduled+/actuator/ppjob;代扣不新造资金路径;账户授权视图由 SignFacade 按 accountId 聚合,**未改 AccountFacade**;ChannelAdapter 增 sign/unsign/agentPay/signCapable 默认方法(additive) |
 | ST-6 | 保证金/垫资 | ✅ | p2-G | 保证金缴存/释放/扣划 + 垫资垫付/追偿,**全部经既有 accountingFacade.post**(bizNo DP:/DR:/DD:/AD:/AR: 确定性派生 + IdempotentTemplate),**未自建账本**;守恒 balance(SYS_DEPOSIT)=Σ缴存−Σ释放−Σ扣划、used=Σ垫资−Σ追偿=−balance(SYS_ADVANCE),**diff 恒 0**;额度并发 5×1000 剩余 2000 → **恰 2 笔成功**;SYS_DEPOSIT 复用既有 2006 科目,SYS_ADVANCE 暂落 2999 待映射(申请新增 1002 垫资应收款);deposit_record/credit_account/advance_record 三表 request_id 全局 UK **单库不分片**,settle_record 零 ALTER,ppshard mirrorFailures=0;敏感操作 step-up;分片↔单库往返 9 类快照逐条一致;verify-account-lifecycle 196/196 |
 | I-1 | ZK 集群化（可选） | 🚫 批准不做 | 用户拍板 2026-11-20 | — | 计划标注「可选」；当前单节点 ZK 已满足部署，集群化属生产扩容项，**列入生产部署必改清单**（REQUIREMENTS §6 / DESIGN §19.11），不在本期实现 |
-| I-6 | tcc-core 参与者自注册 | ⬜ | — | — |
+| I-6 | tcc-core 参与者自注册 | ✅ | 主会话 | — | TccParticipants 改配置驱动自注册(payment.tcc.participant-groups 可 Apollo 热更)+保底三引用;协调器持活视图按需解析;新增参与者域无需改代码。首版注册中心 introspection 因 Dubbo 3.2.14 无 getRegistryManager API 编译失败,改配置驱动(语义等价、零内部 API 依赖)。详见 DESIGN §21.11 |
 
 ### 6.4 期级里程碑（对齐 ROADMAP §9）
 | 期 | 范围 | 状态 | 启动日期 | 完成日期 | 验证记录/提交 |

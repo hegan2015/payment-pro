@@ -48,6 +48,13 @@ public interface PaymentMapper {
     @Update("UPDATE payment SET status=#{status}, fail_reason=#{failReason} WHERE id=#{id} AND status='PROCESSING'")
     int finish(@Param("id") String id, @Param("status") String status, @Param("failReason") String failReason);
 
+    /**
+     * P360 受控终态修复：仅 FAILED→SUCCESS 的 CAS（恰 1 行才生效），清空 fail_reason。
+     * 只翻状态、不动任何资金/凭证；权威依据为 dtx=CONFIRMED 且凭证齐全（服务层前置校验）。
+     */
+    @Update("UPDATE payment SET status='SUCCESS', fail_reason=NULL WHERE id=#{id} AND status='FAILED'")
+    int casRepairTerminal(@Param("id") String id);
+
     @Update("UPDATE payment SET refunded_amount=#{refundedAmount}, refunded_fee=#{refundedFee}, "
             + "status = CASE WHEN #{refundedAmount} >= amount THEN 'REFUNDED' ELSE status END WHERE id=#{id}")
     int updateRefunded(@Param("id") String id, @Param("refundedAmount") long refundedAmount, @Param("refundedFee") long refundedFee);

@@ -60,6 +60,9 @@ public class StepUpAuthInterceptor implements HandlerInterceptor {
     @DubboReference
     private AccountingFacade accountingFacade;
 
+    @DubboReference
+    private com.qoder.payment.facade.payment.PaymentFacade paymentFacade;
+
     public StepUpAuthInterceptor(StepUpTokenStore tokenStore) {
         this.tokenStore = tokenStore;
     }
@@ -97,16 +100,31 @@ public class StepUpAuthInterceptor implements HandlerInterceptor {
                     && body != null && body.path("execute").asBoolean(false))
                 // N-4 additive：通知重发属敏感操作（可触达商户系统），恒需二次认证
                 || MATCHER.match("/api/notify/*/resend", path)
-                || MATCHER.match("/api/notify/resend/batch", path);
+                || MATCHER.match("/api/notify/resend/batch", path)
+                // P360 受控终态修复：翻 FAILED→SUCCESS 属敏感状态变更，恒需二次认证
+                || MATCHER.match("/api/payments/*/repair-terminal", path);
 
         String refundPaymentId = matchGroup("/api/payments/*/refund", path);
         String reverseBizNo = matchGroup("/api/accounting/transfers/*/reverse", path);
+        String repairPaymentId = matchGroup("/api/payments/*/repair-terminal", path);
         long refundAmount = refundPaymentId != null ? longField(body, "amount") : -1;
         long reverseAmount = reverseBizNo != null ? reverseAmount(reverseBizNo) : -1;
+        long repairAmount = -1;
+        if (repairPaymentId != null) {
+            try {
+                com.qoder.payment.facade.payment.PaymentDTO pd =
+                        orNull(paymentFacade.getPayment(repairPaymentId));
+                repairAmount = pd != null && pd.getAmount() != null ? pd.getAmount() : -1;
+            } catch (Exception e) {
+                log.warn("终态修复金额查询失败，fail-closed 走复核: {}", e.getMessage());
+                repairAmount = FALLBACK_THRESHOLD;
+            }
+        }
         boolean largeRefund = refundPaymentId != null && requiresReview(refundAmount);
         boolean largeReverse = reverseBizNo != null && requiresReview(reverseAmount);
+        boolean largeRepair = repairPaymentId != null && requiresReview(repairAmount);
 
-        needStepUp = needStepUp || largeRefund || largeReverse;
+        needStepUp = needStepUp || largeRefund || largeReverse || largeRepair;
         String operator = null;
         if (needStepUp) {
             operator = tokenStore.validate(request.getHeader(STEP_UP_HEADER));
@@ -128,6 +146,12 @@ public class StepUpAuthInterceptor implements HandlerInterceptor {
         }
         if (largeReverse) {
             return reviewGate(response, "REVERSE", reverseBizNo, reverseAmount, operator, body);
+        }
+        if (largeRepair) {
+            String requestId = textField(body, "requestId");
+            if (requestId != null && !requestId.isBlank()) {
+                return reviewGate(response, "REPAIR_TERMINAL", requestId, repairAmount, operator, body);
+            }
         }
         return true;
     }
