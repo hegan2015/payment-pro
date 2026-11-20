@@ -26,6 +26,20 @@ public interface RefundMapper {
     @Select("SELECT * FROM refund_record WHERE xid=#{xid}")
     RefundDO selectByXid(String xid);
 
+    /** additive：退款单分页列表（paymentId/status 可选过滤），供管理台退款单列表页。 */
+    @Select("<script>SELECT * FROM refund_record <where>"
+            + "<if test='paymentId != null'>AND payment_id=#{paymentId}</if>"
+            + "<if test='status != null'>AND status=#{status}</if>"
+            + "</where> ORDER BY created_at DESC, id DESC LIMIT #{limit} OFFSET #{offset}</script>")
+    java.util.List<RefundDO> selectPage(@Param("paymentId") String paymentId, @Param("status") String status,
+                                        @Param("offset") int offset, @Param("limit") int limit);
+
+    @Select("<script>SELECT COUNT(*) FROM refund_record <where>"
+            + "<if test='paymentId != null'>AND payment_id=#{paymentId}</if>"
+            + "<if test='status != null'>AND status=#{status}</if>"
+            + "</where></script>")
+    long countPage(@Param("paymentId") String paymentId, @Param("status") String status);
+
     @Update("UPDATE refund_record SET xid=#{xid} WHERE id=#{id}")
     int updateXid(@Param("id") String id, @Param("xid") String xid);
 

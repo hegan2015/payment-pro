@@ -592,7 +592,28 @@ public class PaymentService {
     }
 
     public List<PaymentDTO> listPayments() {
-        return paymentMapper.selectAll().stream().map(PaymentConverter::toDTO).toList();
+        return paymentMapper.selectAll().stream().map(p -> {
+            PaymentDTO dto = PaymentConverter.toDTO(p);
+            // additive：列表只补 legCount（组合单才查腿数），不带 legs，控制响应体积
+            if (PaymentCompletionListener.isComboMode(dto.getPayMode())) {
+                dto.setLegCount(legMapper.selectByPaymentId(p.getId()).size());
+            } else {
+                dto.setLegCount(0);
+            }
+            return dto;
+        }).toList();
+    }
+
+    /** additive：退款单分页列表（管理台退款单列表页；paymentId/status 可选过滤）。 */
+    public com.qoder.payment.facade.common.PageDTO<com.qoder.payment.facade.payment.RefundDTO> listRefunds(
+            String paymentId, String status, int page, int size) {
+        int p = Math.max(1, page);
+        int s = Math.min(200, Math.max(1, size));
+        long total = refundMapper.countPage(paymentId, status);
+        java.util.List<com.qoder.payment.facade.payment.RefundDTO> items =
+                refundMapper.selectPage(paymentId, status, (p - 1) * s, s).stream()
+                        .map(PaymentConverter::toDTO).toList();
+        return com.qoder.payment.facade.common.PageDTO.of(items, p, s, total);
     }
 
     public PaymentDTO getPayment(String paymentId) {

@@ -59,6 +59,12 @@ public class PaymentFacadeImpl implements PaymentFacade {
     }
 
     @Override
+    public Result<com.qoder.payment.facade.common.PageDTO<com.qoder.payment.facade.payment.RefundDTO>> listRefunds(
+            String paymentId, String status, int page, int size) {
+        return FacadeSupport.execute(() -> paymentService.listRefunds(paymentId, status, page, size));
+    }
+
+    @Override
     public Result<PaymentDTO> getPayment(String paymentId) {
         return FacadeSupport.execute(() -> paymentService.getPayment(paymentId));
     }

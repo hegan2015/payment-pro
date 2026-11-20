@@ -256,6 +256,15 @@ public class ApiController {
         return GatewaySupport.of(paymentFacade.listPayments());
     }
 
+    /** additive：退款单分页列表（管理台退款单列表页）。既有 /refunds/{id} 不变。 */
+    @GetMapping("/refunds")
+    public ResponseEntity<Object> refunds(@RequestParam(required = false) String paymentId,
+                                          @RequestParam(required = false) String status,
+                                          @RequestParam(defaultValue = "1") int page,
+                                          @RequestParam(defaultValue = "20") int size) {
+        return GatewaySupport.of(paymentFacade.listRefunds(paymentId, status, page, size));
+    }
+
     @GetMapping("/payments/{id}")
     public ResponseEntity<Object> payment(@PathVariable String id) {
         return GatewaySupport.of(paymentFacade.getPayment(id));

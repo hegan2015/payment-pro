@@ -57,4 +57,6 @@ public class PaymentDTO implements Serializable {
     private Integer stageSeq;
     /** T-5 所属合并单 id（仅 MERGE/MERGE_COMBO 单填充）。 */
     private String mergeId;
+    /** additive：组合支付腿数。列表只带计数不带 legs（详情才带 legs），控制列表响应体积。 */
+    private Integer legCount;
 }

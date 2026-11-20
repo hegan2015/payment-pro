@@ -19,6 +19,10 @@ public interface PaymentFacade {
 
     Result<List<PaymentDTO>> listPayments();
 
+    /** additive：退款单分页列表（paymentId/status 可选过滤），供管理台退款单列表页。 */
+    Result<com.qoder.payment.facade.common.PageDTO<com.qoder.payment.facade.payment.RefundDTO>> listRefunds(
+            String paymentId, String status, int page, int size);
+
     Result<PaymentDTO> getPayment(String paymentId);
 
     /** 查询补单：对在途/终态不一致支付单主动收敛（幂等）。 */

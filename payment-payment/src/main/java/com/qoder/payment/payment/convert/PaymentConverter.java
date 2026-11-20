@@ -32,4 +32,21 @@ public final class PaymentConverter {
         }
         return cardNo.substring(0, 6) + "****" + cardNo.substring(cardNo.length() - 4);
     }
+
+    /** additive：退款单 DO→DTO（管理台退款单列表页用）。 */
+    public static com.qoder.payment.facade.payment.RefundDTO toDTO(com.qoder.payment.payment.dataobject.RefundDO s) {
+        com.qoder.payment.facade.payment.RefundDTO d = new com.qoder.payment.facade.payment.RefundDTO();
+        d.setId(s.getId());
+        d.setPaymentId(s.getPaymentId());
+        d.setAmount(s.getAmount());
+        d.setFeeRefund(s.getFeeRefund());
+        d.setStatus(s.getStatus());
+        d.setRequestId(s.getRequestId());
+        d.setBizNo(s.getBizNo());
+        d.setChannelOrderNo(s.getChannelOrderNo());
+        d.setFailReason(s.getFailReason());
+        d.setReconcileCount(s.getReconcileCount());
+        d.setCreatedAt(s.getCreatedAt());
+        return d;
+    }
 }
