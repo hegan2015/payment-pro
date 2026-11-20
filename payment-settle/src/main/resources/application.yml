@@ -1,8 +1,12 @@
+# I-8 可观测：本域无业务 HTTP，内嵌 Tomcat 仅承载 actuator（1808x 与 Dubbo 2088x 错开）
+server:
+  port: ${SETTLE_HTTP_PORT:18089}
+
 spring:
   application:
     name: payment-settle
   main:
-    web-application-type: none
+    web-application-type: servlet
   datasource:
     url: jdbc:h2:file:${DATA_DIR:./data}/settle;MODE=MySQL;DATABASE_TO_LOWER=TRUE
     driver-class-name: org.h2.Driver
@@ -16,6 +20,12 @@ spring:
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
+
+# I-5a ShardingSphere 试点：local 恒 false —— 不加载任何 ShardingSphere Bean、不建分片连接，
+# 直连 H2 单库单表，取号仍走 next_value_for('seq_settle')，行为逐字节不变。
+payment:
+  sharding:
+    enabled: false
 
 dubbo:
   application:
@@ -33,3 +43,13 @@ dubbo:
     check: false
     timeout: 5000
     retries: 0
+
+# I-8 可观测：local 零依赖暴露端点，docker 供共享栈 Prometheus scrape
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,ppshard,ppjob,ppsettle
+  endpoint:
+    health:
+      show-details: always

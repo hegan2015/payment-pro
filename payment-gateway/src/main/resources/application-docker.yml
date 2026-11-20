@@ -8,3 +8,18 @@ payment:
   cache:
     redis:
       enabled: true
+  auth:
+    session:
+      redis:
+        enabled: true  # S-2：控制台会话入共享 Redis，全栈重启后存活
+  secret:
+    vault:
+      enabled: ${VAULT_ENABLED:true}  # VAULT_ADDR/VAULT_TOKEN 缺失时自动降级 local（S-1）
+      url: ${VAULT_ADDR:}
+      token: ${VAULT_TOKEN:}
+
+# I-8：docker 共享栈 Redis 在位，恢复健康检查
+management:
+  health:
+    redis:
+      enabled: true

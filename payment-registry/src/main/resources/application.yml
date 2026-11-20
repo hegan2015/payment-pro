@@ -1,5 +1,19 @@
+# I-8 可观测：内嵌 Tomcat 仅承载 actuator（18092）；ZK 2181 与 /health 8092 探针保持不变
+server:
+  port: ${REGISTRY_HTTP_PORT:18092}
+
 spring:
   application:
     name: payment-registry
   main:
-    web-application-type: none
+    web-application-type: servlet
+
+# I-8 可观测：local 零依赖暴露端点，docker 供 Prometheus scrape（registry 无 payment-common，仅 jvm/process 指标）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always

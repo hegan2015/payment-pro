@@ -31,4 +31,30 @@ public class NotifyFacadeImpl implements NotifyFacade {
     public Result<NotifyRecordDTO> get(String notifyId) {
         return FacadeSupport.execute(() -> notifyService.get(notifyId));
     }
+
+    @Override
+    public Result<NotifyRecordDTO> replay(String notifyId) {
+        return FacadeSupport.execute(() -> notifyService.replay(notifyId));
+    }
+
+    @Override
+    public Result<com.qoder.payment.facade.notify.NotifyPageDTO> query(
+            com.qoder.payment.facade.notify.NotifyQueryRequest request) {
+        return FacadeSupport.execute(() -> notifyService.query(request));
+    }
+
+    @Override
+    public Result<NotifyRecordDTO> resend(String notifyId, String requestId) {
+        return FacadeSupport.execute(() -> notifyService.resend(notifyId, requestId));
+    }
+
+    @Override
+    public Result<com.qoder.payment.facade.notify.NotifyBatchResendDTO> resendBatch(List<String> notifyIds, String requestId) {
+        return FacadeSupport.execute(() -> notifyService.resendBatch(notifyIds, requestId));
+    }
+
+    @Override
+    public Result<List<java.util.Map<String, Object>>> events() {
+        return FacadeSupport.execute(notifyService::events);
+    }
 }

@@ -1,8 +1,12 @@
+# I-8 可观测：本域无业务 HTTP，内嵌 Tomcat 仅承载 actuator（1808x 与 Dubbo 2088x 错开）
+server:
+  port: ${PAYMENT_HTTP_PORT:18085}
+
 spring:
   application:
     name: payment-payment
   main:
-    web-application-type: none
+    web-application-type: servlet
   datasource:
     url: jdbc:h2:file:${DATA_DIR:./data}/payment;MODE=MySQL;DATABASE_TO_LOWER=TRUE
     driver-class-name: org.h2.Driver
@@ -36,3 +40,49 @@ dubbo:
 
 payment:
   fee-bps: ${FEE_BPS:60}
+  # P2-E P-7 营销抵扣编排总开关（§5.5 回滚手段）：false 时「有营销诉求」的支付优雅拒绝，
+  # 「无营销诉求」的支付完全不受影响（纯内存短路判定，零 RPC、零额外延迟、fee 口径不变）。
+  # 营销进程未启动（PP_MARKETING_ENABLED=false）时同样优雅拒绝，不影响 13/13 健康与 ride 路径。
+  marketing:
+    enabled: ${PAYMENT_MARKETING_ORCH_ENABLED:true}
+  # I-5b 资金域分库分表：local 恒 false —— 不加载任何 ShardingSphere Bean、不建分片连接，
+  # 直连 H2 单库单表，取号仍走 next_value_for('seq_payment'/'seq_refund')，
+  # 幂等仍靠 uk_payment_request / uk_refund_request 全局唯一键，行为逐字节不变。
+  sharding:
+    enabled: false
+  # S-7 大额双人复核（资金防线）：阈值默认 1000000 分=1 万元，环境变量可覆盖（I-2 Apollo 落地前的载体）。
+  # 闸门只作用于控制台 /api/**（网关拦截器）；/openapi/** 商户路径不经过闸门（§0.7 兼容红线）。
+  review:
+    enabled: ${REVIEW_ENABLED:true}
+    threshold: ${REVIEW_THRESHOLD:1000000}
+  # CH-1 异步渠道开关：默认 false=同步模拟银行（tryAll→commitAsync，行为不变）。
+  # 异步混沌须与 channel 域同开关：PAYMENT_CHANNEL_ASYNC=true 同时启动 payment + channel。
+  channel:
+    async: ${PAYMENT_CHANNEL_ASYNC:false}
+  # S-5/P-1 PROCESSING 查询补单收敛（双 profile 同构，@Scheduled 兜底）
+  reconcile:
+    enabled: ${RECONCILE_ENABLED:true}
+    interval-ms: ${RECONCILE_INTERVAL_MS:5000}
+    timeout-ms: ${RECONCILE_TIMEOUT_MS:60000}
+    max-attempts: ${RECONCILE_MAX_ATTEMPTS:30}
+    backoff-base-ms: 5000
+    backoff-max-ms: 60000
+    batch-size: 50
+  # I-3 分布式调度：local 零依赖（不连 XXL-Job），@Scheduled(fixedDelay 5s/3s) 语义不变 + ShedLock H2 锁。
+  job:
+    xxl:
+      enabled: false
+    local:
+      enabled: true
+    shedlock:
+      enabled: true
+
+# I-8 可观测：local 零依赖暴露端点，docker 供共享栈 Prometheus scrape
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,ppjob,ppshard
+  endpoint:
+    health:
+      show-details: always

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>付款码 · payment-pro</title>
+<link rel="stylesheet" href="design-system.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="paycode">
+<div class="h5-stage">
+  <div class="phone"><div class="notch"></div><div class="phone-screen">
+    <div class="statusbar on-blue"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+    <div class="screen-body">
+      <div class="code-body">
+        <div class="code-tabs"><span id="tabScan">扫一扫</span><span class="active">付款码</span><span id="tabRide">乘车码</span></div>
+        <div class="code-card">
+          <div class="code-hint">向商家出示此码完成付款（沙箱·被扫）</div>
+          <div class="barcode" id="barcode"></div>
+          <div class="code-number num" id="codeNumber">———— ———— ———— ———— ———</div>
+          <div class="qr-wrap"><svg class="qr" id="qr" viewBox="0 0 100 100"></svg></div>
+          <button class="code-refresh" id="codeRefresh"><svg><use href="#i-refresh"/></svg><span id="codeCountdown">60s</span> 后自动刷新 · 点击立即刷新</button>
+        </div>
+        <div class="banner info" id="codeInfo" style="margin:var(--s-3) 0 0"></div>
+        <div class="pad-4" style="padding-left:0;padding-right:0">
+          <button class="btn-primary" id="simScan">沙箱：模拟商户扫码核销</button>
+        </div>
+        <div class="code-safe"><svg><use href="#i-shield"/></svg>付款码每分钟更新 · 一次性核销 · 防重放 · 请勿泄露给他人</div>
+      </div>
+    </div>
+    <div class="home-bar"></div>
+  </div></div>
+</div>
+<script src="app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var state = { code: null, orderId: null, accountId: null, countdown: 60, timer: null, poller: null, done: false };
+  var info = document.getElementById("codeInfo");
+  function showInfo(m) { info.textContent = m; info.classList.add("show"); }
+
+  function newCode() {
+    state.done = false;
+    clearInterval(state.poller);
+    PP.provisionDemo().then(function (demo) {
+      state.accountId = demo.accountId;
+      // 被扫沙箱用小额订单（≤免密限额），便于演示核销→支付→结果全链路
+      return PP.api("POST", "/api/orders", { merchantId: demo.merchantId, subject: "付款码沙箱商品", amount: 100 })
+        .then(function (r) {
+          return PP.api("POST", "/api/cashier/code", { type: "USER_PRESENTED", accountId: demo.accountId, orderId: r.order.id });
+        });
+    }).then(function (code) {
+      state.code = code; state.orderId = code.orderId;
+      PP.drawBarcode(document.getElementById("barcode"));
+      PP.drawQR(document.getElementById("qr"), code.code);
+      document.getElementById("codeNumber").textContent = code.displayCode || code.code;
+      state.countdown = code.ttlSeconds || 60;
+      document.getElementById("codeCountdown").textContent = state.countdown + "s";
+      showInfo("码值 " + code.code + " · 订单 " + code.orderId + " · " + PP.fmt(code.amount) + "（沙箱示意二维码，码值以文本为准）");
+      startPoll();
+    }).catch(function (e) { PP.toast(e.message || "生成付款码失败", true); });
+  }
+
+  function startPoll() {
+    clearInterval(state.poller);
+    state.poller = setInterval(function () {
+      if (!state.code || state.done) return;
+      PP.api("GET", "/api/cashier/code/" + encodeURIComponent(state.code.code)).then(function (c) {
+        if (c.status === "CONSUMED") {
+          state.done = true; clearInterval(state.poller);
+          PP.api("GET", "/api/orders/" + state.orderId).then(function (o) {
+            if (o.paymentId) PP.go("result.html", { paymentId: o.paymentId, orderId: o.id });
+            else PP.toast("已核销，支付处理中…");
+          });
+        } else if (c.status === "EXPIRED") {
+          newCode();
+        }
+      }).catch(function () {});
+    }, 2000);
+  }
+
+  clearInterval(state.timer);
+  state.timer = setInterval(function () {
+    if (state.done) return;
+    state.countdown--;
+    if (state.countdown <= 0) { newCode(); return; }
+    document.getElementById("codeCountdown").textContent = state.countdown + "s";
+  }, 1000);
+
+  document.getElementById("codeRefresh").addEventListener("click", function () { newCode(); PP.toast("付款码已刷新"); });
+  document.getElementById("simScan").addEventListener("click", function () {
+    if (!state.code) { PP.toast("请先生成付款码", true); return; }
+    var reqId = "CSHTEST-H5-SCAN-" + Date.now().toString(36);
+    PP.api("POST", "/api/cashier/scan-pay", { code: state.code.code, requestId: reqId, method: "BALANCE" })
+      .then(function (r) { state.done = true; clearInterval(state.poller); PP.go("result.html", { paymentId: r.payment.id, orderId: state.orderId }); })
+      .catch(function (e) { PP.toast(e.message || "核销失败", true); });
+  });
+  document.getElementById("tabScan").addEventListener("click", function () { PP.go("scan.html"); });
+  document.getElementById("tabRide").addEventListener("click", function () { PP.toast("乘车码 · 预留入口（演示）"); });
+  newCode();
+})();
+</script>
+</body>
+</html>

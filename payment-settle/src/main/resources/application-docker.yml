@@ -7,3 +7,60 @@ spring:
   sql:
     init:
       mode: never
+
+# I-5a ShardingSphere-JDBC 试点（仅 docker、仅非资金域）：
+#   单库分表 pp_settle.settle_record_0..3，按 merchant_id CRC32 % 4；
+#   原单表 settle_record 永久保留 + 分片期 additive 影子写回，PAYMENT_SHARDING_ENABLED=false 一键回滚。
+#   幂等表 idempotent_record / sequences 仍单库单表（SINGLE 规则钉在主库），
+#   与业务写同库同事务，五层幂等原子性不变。
+payment:
+  sharding:
+    enabled: ${PAYMENT_SHARDING_ENABLED:true}
+    shard-count: 4
+    tables:
+      settle_record: merchant_id
+    single-tables:
+      - idempotent_record
+      - sequences
+      # ST-1~ST-5 新表全部单库不分片：状态机/协调器表含 UPDATE（影子写只 INSERT，分片会破坏回滚一致性），
+      # 且 withdraw_order.request_id / settle_share_detail(share_id,receiver) 是全局幂等键，
+      # 分片后 DB 唯一键无法跨片保证。跨片汇总由已分片的 settle_record 顶层 SUM 归并提供。
+      - shedlock
+      - settle_cycle
+      - settle_batch
+      - settle_batch_item
+      - fee_rule
+      - fee_rule_audit
+      - settle_share_detail
+      - withdraw_order
+      - merchant_bill
+      # ST-6（P2 G 泳道）保证金/授信/垫资：request_id 全局幂等键 + CAS 状态机 UPDATE ⇒ 单库不分片
+      - deposit_record
+      - credit_account
+      - advance_record
+    readwrite-splitting: true
+    mirror-legacy: true
+    sql-show: ${PAYMENT_SHARDING_SQL_SHOW:true}
+    pool:
+      maximum-pool-size: 8
+      minimum-idle: 2
+  idgen:
+    worker-id: ${SETTLE_IDGEN_WORKER_ID:-1}
+    zk-path: /payment-pro/idgen/workers
+  # I-3 分布式调度：settleBatch / settleBill / withdrawReconcile 三个 JobHandler，
+  # 逐片 ShedLock 互斥（同片多实例不重复）、各片并行；XXL 不可达自动回切本地兜底。
+  job:
+    xxl:
+      enabled: ${PAYMENT_XXL_ENABLED:true}
+      admin-addresses: ${PAYMENT_XXL_ADMIN:http://127.0.0.1:8094/xxl-job-admin}
+      appname: ${SETTLE_XXL_APPNAME:payment-settle-executor}
+      executor-ip: ${PAYMENT_XXL_EXECUTOR_IP:host.docker.internal}
+      port: ${SETTLE_XXL_PORT:9995}
+      access-token: ${XXL_JOB_ACCESS_TOKEN:}
+      log-path: logs/xxl-job/settle
+    local:
+      enabled: true
+      standby-when-xxl-healthy: true
+      stall-threshold-ms: 10000
+    shedlock:
+      enabled: true

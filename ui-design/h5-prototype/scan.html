@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>扫一扫 · payment-pro</title>
+<link rel="stylesheet" href="design-system.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="scan">
+<div class="h5-stage">
+  <div class="phone"><div class="notch"></div><div class="phone-screen">
+    <div class="statusbar on-blue"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+    <div class="screen-body scroll" style="background:hsl(220 20% 14%)">
+      <div class="appbar"><div class="ab-title"><svg id="backBtn"><use href="#i-back"/></svg>扫一扫<svg style="opacity:.6"><use href="#i-more"/></svg></div></div>
+      <div class="scan-frame">
+        <span class="corner c1"></span><span class="corner c2"></span><span class="corner c3"></span><span class="corner c4"></span>
+        <span class="scan-line"></span>
+        <svg class="qr" id="merchantQr" viewBox="0 0 100 100" style="position:absolute;inset:0;margin:auto;width:150px;height:150px;opacity:.9"></svg>
+      </div>
+      <div class="center" style="color:hsl(0 0% 100% / .8);font-size:var(--t-xs);padding:0 var(--s-4)">将商家收款码放入框内（沙箱：可点下方按钮生成示例收款码模拟扫码）</div>
+      <div class="pad-4">
+        <button class="btn-ghost" id="genMerchant" style="background:hsl(0 0% 100% / .12);color:#fff;border-color:hsl(0 0% 100% / .25)">生成示例收款码（模拟商家出码）</button>
+      </div>
+      <div class="scan-input">
+        <input id="codeInput" type="text" placeholder="输入/粘贴收款码令牌">
+        <button class="btn-primary" id="parseBtn" style="width:auto;padding:0 var(--s-4);height:44px">解析</button>
+      </div>
+      <div class="banner error" id="scanErr"></div>
+      <div class="card pad-4 mt-3" id="parsedCard" style="display:none;margin:var(--s-3)">
+        <div class="row-between"><span class="muted tiny">收款商户</span><span id="pMerchant" style="font-weight:600"></span></div>
+        <div class="row-between mt-3"><span class="muted tiny">订单号</span><span class="num tiny" id="pOrder"></span></div>
+        <div class="row-between mt-3"><span class="muted tiny">支付金额</span><span class="num" id="pAmount" style="font-size:var(--t-lg);color:hsl(var(--danger));font-weight:700"></span></div>
+        <div class="field mt-3" id="scanPwdWrap" style="display:none"><label for="scanPwd">支付密码（超免密限额需验证）</label><input id="scanPwd" type="password" inputmode="numeric" maxlength="6" placeholder="6 位支付密码"></div>
+        <button class="btn-primary mt-4" id="confirmScan">确认支付</button>
+      </div>
+      <div class="code-safe" style="padding-bottom:var(--s-5)"><svg><use href="#i-shield"/></svg>沙箱扫码 · 不接真实微信/支付宝 · 核销一次性防重放</div>
+    </div>
+    <div class="home-bar"></div>
+  </div></div>
+</div>
+<script src="app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var state = { parsed: null, payerAccountId: null, free: 1000 };
+  var err = document.getElementById("scanErr");
+  function showErr(m) { err.textContent = m; err.classList.add("show"); }
+  function clearErr() { err.classList.remove("show"); }
+
+  PP.provisionDemo().then(function (demo) {
+    state.payerAccountId = demo.accountId; state.merchantId = demo.merchantId; state.merchantAccountId = demo.merchantAccountId;
+    return PP.api("GET", "/api/cashier/methods?orderId=" + encodeURIComponent(demo.orderId) + "&accountId=" + encodeURIComponent(demo.accountId));
+  }).then(function (dto) { state.free = dto.freeVerifyLimit || 1000; }).catch(function () {});
+
+  document.getElementById("genMerchant").addEventListener("click", function () {
+    clearErr();
+    PP.api("POST", "/api/orders", { merchantId: state.merchantId, subject: "扫码沙箱商品", amount: 100 })
+      .then(function (r) {
+        return PP.api("POST", "/api/cashier/code", { type: "MERCHANT_PRESENTED", accountId: state.merchantAccountId, orderId: r.order.id });
+      }).then(function (code) {
+        PP.drawQR(document.getElementById("merchantQr"), code.code);
+        document.getElementById("codeInput").value = code.code;
+        PP.toast("示例收款码已生成，点击解析");
+      }).catch(function (e) { showErr(e.message || "生成收款码失败"); });
+  });
+
+  function parse() {
+    clearErr();
+    var raw = document.getElementById("codeInput").value.trim();
+    if (!raw) { showErr("请输入收款码"); return; }
+    // 支持二维码 URL：提取 code 参数
+    var codeVal = raw;
+    var m = raw.match(/[?&]code=([^&]+)/);
+    if (m) codeVal = decodeURIComponent(m[1]);
+    PP.api("POST", "/api/cashier/code/parse", { code: codeVal }).then(function (c) {
+      if (c.status !== "ACTIVE") { showErr(c.status === "EXPIRED" ? "收款码已过期" : "收款码已核销"); return; }
+      state.parsed = c;
+      document.getElementById("pMerchant").textContent = c.merchantName || "示例商户";
+      document.getElementById("pOrder").textContent = c.orderId || "—";
+      document.getElementById("pAmount").textContent = PP.fmt(c.amount);
+      document.getElementById("scanPwdWrap").style.display = c.amount > state.free ? "flex" : "none";
+      document.getElementById("parsedCard").style.display = "block";
+    }).catch(function (e) { showErr(e.message || "解析失败"); });
+  }
+  document.getElementById("parseBtn").addEventListener("click", parse);
+
+  document.getElementById("confirmScan").addEventListener("click", function () {
+    clearErr();
+    if (!state.parsed) { showErr("请先解析收款码"); return; }
+    var body = { code: state.parsed.code, requestId: "CSHTEST-H5-MSCAN-" + Date.now().toString(36), payerAccountId: state.payerAccountId, method: "BALANCE" };
+    if (state.parsed.amount > state.free) {
+      var pwd = document.getElementById("scanPwd").value.trim();
+      if (!/^\d{6}$/.test(pwd)) { showErr("超免密限额，请输入 6 位支付密码"); return; }
+      body.payPassword = pwd;
+    }
+    PP.api("POST", "/api/cashier/scan-pay", body).then(function (r) {
+      PP.go("result.html", { paymentId: r.payment.id, orderId: state.parsed.orderId });
+    }).catch(function (e) { showErr(e.message || "支付失败"); });
+  });
+  document.getElementById("backBtn").addEventListener("click", function () { PP.go("wallet.html"); });
+})();
+</script>
+</body>
+</html>

@@ -1,8 +1,26 @@
+# I-8 可观测：本域无业务 HTTP，内嵌 Tomcat 仅承载 actuator（1808x 与 Dubbo 2088x 错开）
+server:
+  port: ${CASHIER_HTTP_PORT:18086}
+
 spring:
   application:
     name: payment-cashier
   main:
-    web-application-type: none
+    web-application-type: servlet
+  # P1 C-2/C-3（E-3 前置）：cashier 新增 local H2 库（零依赖），付款码/验证会话/支付口令持久化
+  datasource:
+    url: jdbc:h2:file:${DATA_DIR:./data}/cashier;MODE=MySQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
 
 dubbo:
   application:
@@ -20,3 +38,13 @@ dubbo:
     check: false
     timeout: 5000
     retries: 0
+
+# I-8 可观测：local 零依赖暴露端点，docker 供共享栈 Prometheus scrape
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always

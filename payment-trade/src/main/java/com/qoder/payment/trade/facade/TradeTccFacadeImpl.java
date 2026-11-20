@@ -13,13 +13,15 @@ import com.qoder.payment.trade.service.TradeService;
 import lombok.RequiredArgsConstructor;
 import org.apache.dubbo.config.annotation.DubboService;
 
-/** 交易 TCC 参与者：PAY 预留订单 / REFUND 退款标记。 */
+/** 交易 TCC 参与者：PAY 预留订单 / REFUND 退款标记 / STAGE_PAY 分阶段 / MERGE_PAY 合并子订单（P2-H additive）。 */
 @DubboService(group = "trade")
 @RequiredArgsConstructor
 public class TradeTccFacadeImpl implements TccParticipantFacade {
 
     private final TccParticipantTemplate template;
     private final TradeService tradeService;
+    private final com.qoder.payment.trade.service.StagePayService stagePayService;
+    private final com.qoder.payment.trade.service.MergePayService mergePayService;
 
     @Override
     public Result<Void> tryAction(TccBranchRequest request) {
@@ -28,6 +30,10 @@ public class TradeTccFacadeImpl implements TccParticipantFacade {
             template.tryAction(request, () -> {
                 if ("REFUND".equals(request.getAction())) {
                     tradeService.checkRefundable(ctx);
+                } else if ("STAGE_PAY".equals(request.getAction())) {
+                    stagePayService.tryStage(ctx);
+                } else if ("MERGE_PAY".equals(request.getAction())) {
+                    mergePayService.tryMergeSub(ctx);
                 } else {
                     tradeService.reserve(ctx);
                 }
@@ -43,6 +49,10 @@ public class TradeTccFacadeImpl implements TccParticipantFacade {
             template.confirm(request, () -> {
                 if ("REFUND".equals(request.getAction())) {
                     tradeService.refundMark(ctx.getOrderId(), ctx.getAmount(), ctx.getBizNo());
+                } else if ("STAGE_PAY".equals(request.getAction())) {
+                    stagePayService.confirmStage(ctx);
+                } else if ("MERGE_PAY".equals(request.getAction())) {
+                    mergePayService.confirmMergeSub(ctx);
                 } else {
                     tradeService.markPaid(ctx);
                 }
@@ -56,7 +66,11 @@ public class TradeTccFacadeImpl implements TccParticipantFacade {
         return FacadeSupport.execute(() -> {
             TradeTccContext ctx = TccContextUtil.fromJson(request.getContext(), TradeTccContext.class);
             template.cancel(request, () -> {
-                if (!"REFUND".equals(request.getAction())) {
+                if ("STAGE_PAY".equals(request.getAction())) {
+                    stagePayService.cancelStage(ctx);
+                } else if ("MERGE_PAY".equals(request.getAction())) {
+                    mergePayService.cancelMergeSub(ctx);
+                } else if (!"REFUND".equals(request.getAction())) {
                     tradeService.release(ctx);
                 }
             });

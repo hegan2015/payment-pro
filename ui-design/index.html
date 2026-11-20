@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>payment-pro · 支付宝对齐 UI 设计</title>
+<meta name="description" content="payment-pro 支付平台与支付宝对齐的 UI 交互设计：消费者收银台/钱包/付款码/支付结果 + 商户控制台，含设计系统与升级映射。">
+<link rel="stylesheet" href="design-system.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231677FF'/%3E%3Cpath d='M9 20c4-1 8-3 11-7M10 12h12M16 9v3' stroke='white' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<!-- ===== SVG 图标库 ===== -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <defs>
+    <g id="base" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></g>
+  </defs>
+  <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M3 12h18"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20v.01M20 20v.01M17 20h.01"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></symbol>
+  <symbol id="i-bill" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21z"/><path d="M9 8h6M9 12h6"/></symbol>
+  <symbol id="i-balance" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1 1.3-1.5 3-1.5s3 .5 3 1.5-1.3 1.5-3 1.5-3 .5-3 1.5 1.3 1.5 3 1.5 3-.5 3-1.5"/></symbol>
+  <symbol id="i-huabei" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V7z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-bank" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6M4 9v10M20 9v10M8 12v4M12 12v4M16 12v4M2 21h20"/></symbol>
+  <symbol id="i-transfer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3M20 16H7l3 3"/></symbol>
+  <symbol id="i-topup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></symbol>
+  <symbol id="i-withdraw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 12l-3-3M12 12l-3 3"/></symbol>
+  <symbol id="i-redpacket" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 8c4 2 12 2 16 0M12 11v3"/><circle cx="12" cy="11" r="1.5"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-delete" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H8l-5 7 5 7h13a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1zM17 9l-6 6M11 9l6 6"/></symbol>
+  <symbol id="i-fingerprint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a8 8 0 0 1 8 8M4 12a8 8 0 0 1 4-6.9M7 12a5 5 0 0 1 10 0v3M12 12v5M9 15a3 3 0 0 0 3 3M16 16a4 4 0 0 1-1 3"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 14l3-4 3 3 5-6"/></symbol>
+  <symbol id="i-settle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3M16 3v3M8 3v3"/></symbol>
+  <symbol id="i-recon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-notify" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+  <symbol id="i-risk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5v5c0 5-3.8 8.5-9 9-5.2-.5-9-4-9-9V8z"/><path d="M12 8v4M12 16h.01"/></symbol>
+  <symbol id="i-marketing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-7-7 18-2.5-7.5z"/></symbol>
+  <symbol id="i-openapi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12"/></symbol>
+  <symbol id="i-refund" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/><path d="M12 8v4l3 2"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M8.5 6H12a3 3 0 0 1 3 3v.5M8.5 18H12a3 3 0 0 0 3-3v-.5"/></symbol>
+  <symbol id="i-txn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13l-3-3M20 17H7l3 3"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M16 12h4M3 9h16"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-signal" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="14" width="3" height="6" rx="1"/><rect x="7" y="10" width="3" height="10" rx="1"/><rect x="12" y="6" width="3" height="14" rx="1"/><rect x="17" y="3" width="3" height="17" rx="1"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0M12 19h.01"/></symbol>
+  <symbol id="i-battery" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="4" y="9" width="12" height="6" rx="1" fill="currentColor" stroke="none"/><path d="M22 10v4" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="showcase">
+
+  <!-- ===== HERO ===== -->
+  <header class="hero">
+    <div class="hero-eyebrow">payment-pro · UI/UX Design</div>
+    <h1>与支付宝对齐的支付交互设计</h1>
+    <p>消费者端移动收银台全流程 + 商户控制台。设计语言对齐支付宝：品牌蓝 #1677FF、卡片化、金额大字、密码键盘、付款码。每个界面标注对应的生产化升级项（P0/P1/P2）。</p>
+    <div class="hero-chips">
+      <span class="chip"><span class="dot" style="background:#1677FF"></span>品牌蓝 #1677FF</span>
+      <span class="chip"><span class="dot" style="background:#00B578"></span>成功绿 #00B578</span>
+      <span class="chip"><span class="dot" style="background:#F04A4A"></span>金额红 #F04A4A</span>
+      <span class="chip">PingFang SC · DIN 数字</span>
+      <span class="chip">8pt 间距栅格</span>
+      <span class="chip">零依赖 · 可直接打开</span>
+    </div>
+  </header>
+
+  <!-- ===== 消费者端 ===== -->
+  <section class="section">
+    <div class="section-head">
+      <span class="idx">01</span>
+      <h2>消费者端 · 移动收银台</h2>
+      <span class="sub">钱包 → 收银台 → 密码 → 结果 → 付款码 → 账单（点击支付方式/键盘可交互）</span>
+    </div>
+    <div class="board">
+
+      <!-- 屏 1 · 钱包首页 -->
+      <div class="specimen">
+        <div class="phone"><div class="notch"></div><div class="phone-screen">
+          <div class="statusbar on-blue"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+          <div class="screen-body">
+            <div class="wallet-top">
+              <div class="wallet-balance-label">余额（元）<svg style="width:14px;height:14px"><use href="#i-eye"/></svg></div>
+              <div class="wallet-balance num"><span class="cur">¥</span>1,280.50</div>
+              <div class="wallet-actions">
+                <button class="wallet-action"><svg><use href="#i-scan"/></svg>扫一扫</button>
+                <button class="wallet-action"><svg><use href="#i-code"/></svg>付款码</button>
+                <button class="wallet-action"><svg><use href="#i-card"/></svg>卡包</button>
+                <button class="wallet-action"><svg><use href="#i-bill"/></svg>账单</button>
+              </div>
+            </div>
+            <div class="card wallet-grid">
+              <div class="wallet-grid-item"><span class="gi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-balance"/></svg></span>余额宝</div>
+              <div class="wallet-grid-item"><span class="gi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-huabei"/></svg></span>花呗</div>
+              <div class="wallet-grid-item"><span class="gi-icon" style="background:hsl(var(--danger-soft));color:hsl(var(--danger))"><svg><use href="#i-redpacket"/></svg></span>红包</div>
+              <div class="wallet-grid-item"><span class="gi-icon" style="background:hsl(var(--success-soft));color:hsl(var(--success))"><svg><use href="#i-transfer"/></svg></span>转账</div>
+              <div class="wallet-grid-item"><span class="gi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-topup"/></svg></span>充值</div>
+              <div class="wallet-grid-item"><span class="gi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-withdraw"/></svg></span>提现</div>
+              <div class="wallet-grid-item"><span class="gi-icon" style="background:hsl(var(--gold)/.18);color:#8a5a00"><svg><use href="#i-bank"/></svg></span>银行卡</div>
+              <div class="wallet-grid-item"><span class="gi-icon" style="background:hsl(var(--fill));color:hsl(var(--ink-3))"><svg><use href="#i-more"/></svg></span>更多</div>
+            </div>
+            <div class="card wallet-section">
+              <div class="ws-head">我的银行卡<span class="more">管理 ›</span></div>
+              <div class="bankcard-row"><span class="bc-logo" style="background:#E60012">招</span><div class="bc-text"><div class="bc-name">招商银行储蓄卡</div><div class="bc-no num">**** **** **** 8888</div></div><span class="tag tag-blue">默认</span></div>
+              <div class="bankcard-row"><span class="bc-logo" style="background:#0052E0">建</span><div class="bc-text"><div class="bc-name">建设银行信用卡</div><div class="bc-no num">**** **** **** 6621</div></div></div>
+            </div>
+          </div>
+          <div class="home-bar"></div>
+        </div></div>
+        <div class="specimen-cap"><div class="name">钱包首页</div><div class="desc">余额大字 · 四宫格快捷入口 · 银行卡</div><div class="ref">A-1 多账户 · A-2 绑卡 · M-3 分级</div></div>
+      </div>
+
+      <!-- 屏 2 · 收银台 -->
+      <div class="specimen">
+        <div class="phone"><div class="notch"></div><div class="phone-screen">
+          <div class="statusbar"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+          <div class="screen-body">
+            <div class="appbar" style="background:hsl(var(--card));color:hsl(var(--ink-1));border-bottom:1px solid hsl(var(--line))">
+              <div class="ab-title"><svg style="color:hsl(var(--ink-2))"><use href="#i-back"/></svg>收银台<svg style="color:hsl(var(--ink-3))"><use href="#i-more"/></svg></div>
+            </div>
+            <div class="cashier-head">
+              <div class="cashier-merchant"><svg style="width:14px;height:14px;color:hsl(var(--success))"><use href="#i-shield"/></svg>星巴克咖啡（示例商户）</div>
+              <div class="cashier-amount num"><span class="cur">¥</span>299.00</div>
+              <div class="cashier-order num">订单号 20261119000123456</div>
+            </div>
+            <div class="cashier-body">
+              <div class="cashier-label">选择支付方式（可组合）</div>
+              <div class="pay-method selected" data-method="balance">
+                <span class="icon-circle pm-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-wallet"/></svg></span>
+                <div class="pm-text"><div class="pm-name">余额</div><div class="pm-desc">可用 ¥1,280.50</div></div>
+                <span class="radio"><svg><use href="#i-check"/></svg></span>
+              </div>
+              <div class="pay-method" data-method="card">
+                <span class="icon-circle pm-icon" style="background:#FDECEC;color:#E60012"><svg><use href="#i-bank"/></svg></span>
+                <div class="pm-text"><div class="pm-name">招商银行储蓄卡 <span class="tag tag-red">立减¥2</span></div><div class="pm-desc num">**** 8888 · 单笔限额 ¥50,000</div></div>
+                <span class="radio"><svg><use href="#i-check"/></svg></span>
+              </div>
+              <div class="pay-method" data-method="huabei">
+                <span class="icon-circle pm-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-huabei"/></svg></span>
+                <div class="pm-text"><div class="pm-name">花呗</div><div class="pm-desc">可用额度 ¥5,000.00 · 3期免息</div></div>
+                <span class="radio"><svg><use href="#i-check"/></svg></span>
+              </div>
+              <div class="pay-method" data-method="redpacket">
+                <span class="icon-circle pm-icon" style="background:hsl(var(--danger-soft));color:hsl(var(--danger))"><svg><use href="#i-redpacket"/></svg></span>
+                <div class="pm-text"><div class="pm-name">红包抵扣 <span class="tag tag-red">-¥5.00</span></div><div class="pm-desc">1 个可用红包 · 自动最优</div></div>
+                <span class="radio"><svg><use href="#i-check"/></svg></span>
+              </div>
+              <div class="cashier-summary">
+                <div class="cs-row"><span>订单金额</span><span class="num">¥299.00</span></div>
+                <div class="cs-row discount"><span>红包抵扣</span><span class="num">-¥5.00</span></div>
+                <div class="cs-total"><span>实付金额</span><span class="amt num">¥294.00</span></div>
+              </div>
+            </div>
+            <div class="cashier-foot">
+              <button class="btn-primary" id="cashierPay">确认支付 ¥294.00</button>
+              <div class="agree">支付即代表同意《支付服务协议》· 资金由服务端 TCC 保障</div>
+            </div>
+          </div>
+          <div class="home-bar"></div>
+        </div></div>
+        <div class="specimen-cap"><div class="name">收银台</div><div class="desc">多支付方式 · 组合支付 · 营销抵扣</div><div class="ref">C-1 多方式 · P-2 组合 · P-7 营销</div></div>
+      </div>
+
+      <!-- 屏 3 · 支付密码 -->
+      <div class="specimen">
+        <div class="phone"><div class="notch"></div><div class="phone-screen">
+          <div class="statusbar"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+          <div class="screen-body" style="background:hsl(var(--bg))">
+            <div class="appbar" style="background:hsl(var(--card));color:hsl(var(--ink-1))"><div class="ab-title"><svg style="color:hsl(var(--ink-2))"><use href="#i-back"/></svg>收银台<svg style="color:hsl(var(--ink-3))"><use href="#i-more"/></svg></div></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:hsl(var(--ink-4));font-size:var(--t-sm);gap:8px">
+              <svg style="width:40px;height:40px"><use href="#i-lock"/></svg>请输入支付密码验证身份
+            </div>
+            <div class="pwd-scrim" style="position:absolute">
+              <div class="pwd-sheet">
+                <div class="pwd-head">
+                  <button class="close"><svg><use href="#i-close"/></svg></button>
+                  <div class="pwd-title">请输入支付密码</div>
+                  <div class="pwd-amount num"><span class="cur">¥</span>294.00</div>
+                  <div class="pwd-method">余额 · 招商银行储蓄卡(8888)</div>
+                </div>
+                <div class="pwd-dots" id="pwdDots">
+                  <div class="pwd-dot filled"><span class="ball"></span></div>
+                  <div class="pwd-dot filled"><span class="ball"></span></div>
+                  <div class="pwd-dot"><span class="ball"></span></div>
+                  <div class="pwd-dot"><span class="ball"></span></div>
+                  <div class="pwd-dot"><span class="ball"></span></div>
+                  <div class="pwd-dot"><span class="ball"></span></div>
+                </div>
+                <div class="pwd-alt"><span>忘记密码？</span><span style="display:flex;align-items:center;gap:4px"><svg style="width:14px;height:14px"><use href="#i-fingerprint"/></svg>指纹支付</span></div>
+                <div class="keypad" id="keypad">
+                  <button class="key" data-k="1">1</button><button class="key" data-k="2">2</button><button class="key" data-k="3">3</button>
+                  <button class="key" data-k="4">4</button><button class="key" data-k="5">5</button><button class="key" data-k="6">6</button>
+                  <button class="key" data-k="7">7</button><button class="key" data-k="8">8</button><button class="key" data-k="9">9</button>
+                  <button class="key fn" data-k="bio"><svg style="color:hsl(var(--primary))"><use href="#i-fingerprint"/></svg></button>
+                  <button class="key" data-k="0">0</button>
+                  <button class="key fn" data-k="del"><svg style="color:hsl(var(--ink-2))"><use href="#i-delete"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="home-bar"></div>
+        </div></div>
+        <div class="specimen-cap"><div class="name">支付密码键盘</div><div class="desc">6 位密码 · 指纹/面容 · 点击键盘可输入</div><div class="ref">C-3 支付验证 · S-7 二次认证</div></div>
+      </div>
+
+      <!-- 屏 4 · 支付结果 -->
+      <div class="specimen">
+        <div class="phone"><div class="notch"></div><div class="phone-screen">
+          <div class="statusbar"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+          <div class="screen-body">
+            <div class="result-body">
+              <div class="result-icon"><svg><use href="#i-check"/></svg></div>
+              <div class="result-title">支付成功</div>
+              <div class="result-amount num"><span class="cur">¥</span>294.00</div>
+              <div class="result-meta">
+                <div class="rm-row"><span class="k">收款商户</span><span>星巴克咖啡（示例）</span></div>
+                <div class="rm-row"><span class="k">支付方式</span><span>余额 + 红包抵扣</span></div>
+                <div class="rm-row"><span class="k">交易单号</span><span class="num">20261119000123456</span></div>
+                <div class="rm-row"><span class="k">支付时间</span><span class="num">2026-11-19 09:41:32</span></div>
+                <div class="rm-row"><span class="k">资金保障</span><span style="color:hsl(var(--success));display:flex;align-items:center;gap:4px"><svg style="width:14px;height:14px"><use href="#i-shield"/></svg>服务端 TCC 已确认</span></div>
+              </div>
+              <div class="result-actions">
+                <button class="btn-primary">完成</button>
+                <button class="btn-ghost">查看订单详情</button>
+              </div>
+            </div>
+          </div>
+          <div class="home-bar"></div>
+        </div></div>
+        <div class="specimen-cap"><div class="name">支付结果</div><div class="desc">成功态 · 交易凭证 · 资金保障标识</div><div class="ref">P-1 查询补单 · N-1 通知签名</div></div>
+      </div>
+
+      <!-- 屏 5 · 付款码 -->
+      <div class="specimen">
+        <div class="phone"><div class="notch"></div><div class="phone-screen">
+          <div class="statusbar on-blue"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+          <div class="screen-body">
+            <div class="code-body">
+              <div class="code-tabs"><span>扫一扫</span><span class="active">付款码</span><span>乘车码</span></div>
+              <div class="code-card">
+                <div class="code-hint">向商家出示此码完成付款</div>
+                <div class="barcode" id="barcode"></div>
+                <div class="code-number num" id="codeNumber">2861 0493 7752 0186 443</div>
+                <div class="qr-wrap">
+                  <svg class="qr" id="qr" viewBox="0 0 100 100"></svg>
+                </div>
+                <button class="code-refresh" id="codeRefresh"><svg><use href="#i-refresh"/></svg><span id="codeCountdown">58s</span> 后自动刷新 · 点击立即刷新</button>
+              </div>
+              <div class="code-safe"><svg><use href="#i-shield"/></svg>付款码每分钟更新 · 请勿泄露给他人</div>
+            </div>
+          </div>
+          <div class="home-bar"></div>
+        </div></div>
+        <div class="specimen-cap"><div class="name">付款码（被扫）</div><div class="desc">条形码 + 二维码 · 定时刷新 · 防泄露</div><div class="ref">C-2 付款码/扫码 · CH-6 签约代扣</div></div>
+      </div>
+
+      <!-- 屏 6 · 账单 -->
+      <div class="specimen">
+        <div class="phone"><div class="notch"></div><div class="phone-screen">
+          <div class="statusbar"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+          <div class="screen-body">
+            <div class="bill-head">
+              <div class="bill-month"><span style="display:flex;align-items:center;gap:6px"><svg style="width:18px;height:18px;color:hsl(var(--ink-2))"><use href="#i-back"/></svg>2026年11月<svg style="width:14px;height:14px;color:hsl(var(--ink-3))"><use href="#i-down"/></svg></span><svg style="width:18px;height:18px;color:hsl(var(--ink-3))"><use href="#i-search"/></svg></div>
+              <div class="bill-summary">
+                <div class="bs-item"><div class="bs-label">支出</div><div class="bs-val num">¥3,280.50</div></div>
+                <div class="bs-item"><div class="bs-label">收入</div><div class="bs-val num" style="color:hsl(var(--success))">¥1,200.00</div></div>
+              </div>
+            </div>
+            <div class="bill-list">
+              <div class="bill-group-label">今天 · 11月19日</div>
+              <div class="bill-item"><span class="bi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-wallet"/></svg></span><div class="bi-text"><div class="bi-name">星巴克咖啡</div><div class="bi-time num">09:41 · 余额</div></div><div class="bi-amt num">-294.00</div></div>
+              <div class="bill-item"><span class="bi-icon" style="background:hsl(var(--success-soft));color:hsl(var(--success))"><svg><use href="#i-topup"/></svg></span><div class="bi-text"><div class="bi-name">余额充值</div><div class="bi-time num">08:20 · 招商银行</div></div><div class="bi-amt in num">+1,000.00</div></div>
+              <div class="bill-group-label">昨天 · 11月18日</div>
+              <div class="bill-item"><span class="bi-icon" style="background:hsl(var(--gold)/.18);color:#8a5a00"><svg><use href="#i-txn"/></svg></span><div class="bi-text"><div class="bi-name">网约车出行</div><div class="bi-time num">18:32 · 花呗</div></div><div class="bi-amt num">-45.80</div></div>
+              <div class="bill-item"><span class="bi-icon" style="background:hsl(var(--danger-soft));color:hsl(var(--danger))"><svg><use href="#i-redpacket"/></svg></span><div class="bi-text"><div class="bi-name">红包退款</div><div class="bi-time num">14:05 · 原路退回</div></div><div class="bi-amt in num">+5.00</div></div>
+              <div class="bill-item"><span class="bi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-transfer"/></svg></span><div class="bi-text"><div class="bi-name">转账给张三</div><div class="bi-time num">11:20 · 余额</div></div><div class="bi-amt num">-200.00</div></div>
+            </div>
+          </div>
+          <div class="home-bar"></div>
+        </div></div>
+        <div class="specimen-cap"><div class="name">账单流水</div><div class="desc">月度收支 · 分类图标 · 全局分页</div><div class="ref">AC-4 账簿 · ST-5 账单</div></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== 商户控制台 ===== -->
+  <section class="section">
+    <div class="section-head">
+      <span class="idx">02</span>
+      <h2>商户端 · 控制台</h2>
+      <span class="sub">支付宝商家中心风格 · 深色侧栏 + 指标卡 + 对账状态（点击侧栏可切换）</span>
+    </div>
+    <div class="console">
+      <aside class="console-side">
+        <div class="console-brand"><span class="cb-mark"><svg><use href="#i-wallet"/></svg></span>payment-pro</div>
+        <nav class="console-nav" id="consoleNav">
+          <button class="console-nav-item active"><svg><use href="#i-grid"/></svg>概览</button>
+          <button class="console-nav-item"><svg><use href="#i-txn"/></svg>交易管理</button>
+          <button class="console-nav-item"><svg><use href="#i-refund"/></svg>退款</button>
+          <button class="console-nav-item"><svg><use href="#i-split"/></svg>分账</button>
+          <button class="console-nav-item"><svg><use href="#i-settle"/></svg>清结算</button>
+          <button class="console-nav-item"><svg><use href="#i-recon"/></svg>对账中心</button>
+          <button class="console-nav-item"><svg><use href="#i-notify"/></svg>消息通知</button>
+          <button class="console-nav-item"><svg><use href="#i-risk"/></svg>风控</button>
+          <button class="console-nav-item"><svg><use href="#i-marketing"/></svg>营销</button>
+          <button class="console-nav-item"><svg><use href="#i-openapi"/></svg>开放平台</button>
+        </nav>
+      </aside>
+      <div class="console-main">
+        <div class="console-top">
+          <div class="ct-title">经营概览</div>
+          <div class="ct-right"><span class="num">2026-11-19</span><span class="ct-merchant"><span class="ct-avatar">星</span>星巴克咖啡（示例）</span><svg style="width:18px;height:18px"><use href="#i-notify"/></svg></div>
+        </div>
+        <div class="console-content">
+          <div class="metric-row">
+            <div class="metric"><div class="m-label">今日交易额</div><div class="m-value num"><span class="cur">¥</span>128,560.00</div><div class="m-delta up"><svg style="width:12px;height:12px"><use href="#i-up"/></svg>12.5% 较昨日</div><span class="m-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-chart"/></svg></span></div>
+            <div class="metric"><div class="m-label">交易笔数</div><div class="m-value num">1,286</div><div class="m-delta up"><svg style="width:12px;height:12px"><use href="#i-up"/></svg>8.2% 较昨日</div><span class="m-icon" style="background:hsl(var(--success-soft));color:hsl(var(--success))"><svg><use href="#i-txn"/></svg></span></div>
+            <div class="metric"><div class="m-label">待结算金额</div><div class="m-value num"><span class="cur">¥</span>45,230.00</div><div class="m-delta" style="color:hsl(var(--ink-3))">T+1 · 明日到账</div><span class="m-icon" style="background:hsl(var(--gold)/.18);color:#8a5a00"><svg><use href="#i-settle"/></svg></span></div>
+            <div class="metric"><div class="m-label">对账状态</div><div class="m-value" style="color:hsl(var(--success));font-size:var(--t-lg)">五方平衡</div><div class="m-delta up"><svg style="width:12px;height:12px"><use href="#i-check"/></svg>0 差错</div><span class="m-icon" style="background:hsl(var(--success-soft));color:hsl(var(--success))"><svg><use href="#i-recon"/></svg></span></div>
+          </div>
+          <div class="console-grid">
+            <div class="panel">
+              <div class="panel-head"><span class="ph-title">近 7 日交易趋势</span><span class="ph-more">导出报表 ›</span></div>
+              <div class="chart" id="chart"></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><span class="ph-title">五方对账</span><span class="ph-more">详情 ›</span></div>
+              <div class="recon-item"><span class="ri-dot" style="background:hsl(var(--success))"></span><div class="ri-text">账务试算平衡<div class="ri-sub">借=贷 · Σ余额=0</div></div><span class="status-pill ok">通过</span></div>
+              <div class="recon-item"><span class="ri-dot" style="background:hsl(var(--success))"></span><div class="ri-text">支付-账务一致<div class="ri-sub">1,286 笔等额借方</div></div><span class="status-pill ok">通过</span></div>
+              <div class="recon-item"><span class="ri-dot" style="background:hsl(var(--success))"></span><div class="ri-text">支付-交易一致<div class="ri-sub">订单状态匹配</div></div><span class="status-pill ok">通过</span></div>
+              <div class="recon-item"><span class="ri-dot" style="background:hsl(var(--success))"></span><div class="ri-text">支付-清结算一致<div class="ri-sub">结算单齐备</div></div><span class="status-pill ok">通过</span></div>
+              <div class="recon-item"><span class="ri-dot" style="background:hsl(var(--success))"></span><div class="ri-text">支付-渠道一致<div class="ri-sub">渠道交易匹配</div></div><span class="status-pill ok">通过</span></div>
+            </div>
+          </div>
+          <div class="panel" style="margin-top:var(--s-4)">
+            <div class="panel-head"><span class="ph-title">最近交易</span><span class="ph-more">全部交易 ›</span></div>
+            <table class="txn-table">
+              <thead><tr><th>交易单号</th><th>商品</th><th>金额</th><th>支付方式</th><th>状态</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr><td class="txn-id">20261119000123456</td><td>星巴克拿铁套餐</td><td class="num">¥294.00</td><td>余额+红包</td><td><span class="status-pill ok">成功</span></td><td class="num">09:41:32</td></tr>
+                <tr><td class="txn-id">20261119000123455</td><td>美式咖啡×2</td><td class="num">¥56.00</td><td>花呗</td><td><span class="status-pill ok">成功</span></td><td class="num">09:38:10</td></tr>
+                <tr><td class="txn-id">20261119000123454</td><td>蛋糕礼盒</td><td class="num">¥128.00</td><td>招商银行</td><td><span class="status-pill proc">支付中</span></td><td class="num">09:35:47</td></tr>
+                <tr><td class="txn-id">20261119000123450</td><td>星冰乐套餐</td><td class="num">¥88.00</td><td>余额</td><td><span class="status-pill refund">已退款</span></td><td class="num">09:20:05</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 设计系统 ===== -->
+  <section class="section">
+    <div class="section-head">
+      <span class="idx">03</span>
+      <h2>设计系统 · 交互规范</h2>
+      <span class="sub">所有 token 集中在 design-system.css · 组件只引用变量</span>
+    </div>
+    <div class="ds-grid">
+      <div class="ds-card">
+        <h3>色彩 token</h3>
+        <div class="swatch-row"><span class="swatch" style="background:#1677FF"></span><div><div class="sw-name">品牌蓝 primary</div><div class="sw-val">#1677FF · hsl(215 100% 54%)</div></div></div>
+        <div class="swatch-row"><span class="swatch" style="background:#00B578"></span><div><div class="sw-name">成功绿 success</div><div class="sw-val">#00B578 · 支付成功/对账通过</div></div></div>
+        <div class="swatch-row"><span class="swatch" style="background:#F04A4A"></span><div><div class="sw-name">金额红 danger</div><div class="sw-val">#F04A4A · 实付/优惠</div></div></div>
+        <div class="swatch-row"><span class="swatch" style="background:linear-gradient(135deg,#0052E0,#33A1FF)"></span><div><div class="sw-name">头部渐变 grad-header</div><div class="sw-val">钱包/付款码蓝渐变</div></div></div>
+        <div class="swatch-row"><span class="swatch" style="background:#F5F6F8;border:1px solid #E5E7EB"></span><div><div class="sw-name">页面底 bg</div><div class="sw-val">#F5F6F8 · 卡片白 #FFFFFF</div></div></div>
+      </div>
+      <div class="ds-card">
+        <h3>字体层级</h3>
+        <div class="type-spec"><span style="font-size:34px;font-weight:700" class="num">¥294.00</span><span class="ts-meta">金额 34/700 DIN</span></div>
+        <div class="type-spec"><span style="font-size:20px;font-weight:700">支付成功</span><span class="ts-meta">标题 20/700</span></div>
+        <div class="type-spec"><span style="font-size:15px;font-weight:600">招商银行储蓄卡</span><span class="ts-meta">正文 15/600</span></div>
+        <div class="type-spec"><span style="font-size:13px;color:hsl(var(--ink-3))">可用 ¥1,280.50</span><span class="ts-meta">辅助 13/400</span></div>
+        <div class="type-spec"><span style="font-size:11px;color:hsl(var(--ink-4))">订单号 2026...</span><span class="ts-meta">弱化 11/400</span></div>
+      </div>
+      <div class="ds-card">
+        <h3>交互规范（对齐支付宝）</h3>
+        <ul class="ds-note">
+          <li>金额全程「分」存储，展示层千分位 + 两位小数</li>
+          <li>收银台先选支付方式 → 营销自动最优抵扣 → 确认支付</li>
+          <li>支付密码 6 位，输满自动提交；支持指纹/面容降级</li>
+          <li>支付结果异步轮询终态（PROCESSING→SUCCESS），不阻塞</li>
+          <li>付款码每分钟刷新，条形码 + 二维码双形态</li>
+          <li>资金保障标识：服务端 TCC 确认后才显示成功</li>
+          <li>所有动效 280ms cubic-bezier(.4,0,.2,1)，按压回弹</li>
+        </ul>
+      </div>
+      <div class="ds-card">
+        <h3>升级映射</h3>
+        <ul class="ds-note">
+          <li><b>P0</b>：支付验证/通知签名/查询补单/资金保障标识</li>
+          <li><b>P1</b>：多支付方式/组合支付/付款码/担保交易/分账/T+N结算/对账中心</li>
+          <li><b>P2</b>：营销抵扣/多端收银台/开放平台/多币种</li>
+          <li>商户控制台侧栏即升级后的域导航：交易/退款/分账/结算/对账/通知/风控/营销/开放平台</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">payment-pro · 支付宝对齐 UI 设计原型 v1.0 · 零依赖，浏览器直接打开 index.html 即可交互 · 2026-11-19</footer>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

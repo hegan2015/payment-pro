@@ -56,4 +56,20 @@ public class MerchantCache {
         }
         return merchant;
     }
+
+    /** 密钥轮换后主动失效（M-1）：避免 60s TTL 内验签用旧密钥/旧脱敏值。 */
+    public void evict(String appId) {
+        if (!enabled || appId == null) {
+            return;
+        }
+        StringRedisTemplate redis = redisProvider.getIfAvailable();
+        if (redis == null) {
+            return;
+        }
+        try {
+            redis.delete("pp:openapi:app:" + appId);
+        } catch (Exception e) {
+            log.warn("商户缓存失效失败 appId={}: {}", appId, e.getMessage());
+        }
+    }
 }

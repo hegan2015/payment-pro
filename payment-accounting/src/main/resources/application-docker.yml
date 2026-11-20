@@ -7,3 +7,69 @@ spring:
   sql:
     init:
       mode: never
+
+# I-5b 账务域分库分表（单库分表，仅 docker）：
+#   account_balance / ledger_entry 按 **account_id** 分 4 片（CRC32 % 4）——
+#   同账户同片 ⇒ 片内余额/冻结一致、按 accountId 排序加锁防死锁在片内成立。
+#   跨账户转账落多片，但单库分表 ⇒ 同一 MySQL 连接同一本地事务，原子性与改造前一致；
+#   trial() 的 SUM/COUNT 由归并引擎跨片汇总（ΣD=ΣC、Σbalance=0 全局成立）。
+#   **不分片**：transfer_record / tcc_branch_log / idempotent_record / sequences /
+#   reserve_check_log / reserve_bank_adjust / shard_route_state。
+#   initial-active=false：启动即单库观察态，切流由 /actuator/ppshard 显式触发（差异非 0 即拒绝）。
+payment:
+  sharding:
+    enabled: ${PAYMENT_SHARDING_ENABLED:true}
+    initial-active: ${PAYMENT_FUND_SHARDING_ACTIVE:false}
+    shard-count: 4
+    tables:
+      account_balance: account_id
+      ledger_entry: account_id
+    single-tables:
+      - transfer_record
+      - tcc_branch_log
+      - idempotent_record
+      - sequences
+      - reserve_check_log
+      - reserve_bank_adjust
+      - shard_route_state
+      # P1-E AC-2/AC-3/AC-5 新表：全局元数据/会计日历/派生汇总/作业留痕/调度锁，全部不分片
+      - accounting_subject
+      - account_subject_map
+      - subject_balance
+      - accounting_day
+      - day_end_report
+      - accounting_batch_run
+      - accounting_day_snapshot
+      - shedlock
+      # P2-C A-4/AC-6 新表：汇率版本/换汇单/币种账套目录，全局元数据与幂等单据，全部不分片
+      - fx_rate
+      - fx_exchange
+      - accounting_currency
+    readwrite-splitting: true
+    mirror-legacy: true
+    sql-show: ${PAYMENT_SHARDING_SQL_SHOW:true}
+    pool:
+      maximum-pool-size: 8
+      minimum-idle: 2
+  idgen:
+    worker-id: ${ACCOUNTING_IDGEN_WORKER_ID:-1}
+    zk-path: /payment-pro/idgen/workers
+  # P1-E AC-3 分布式调度：accountingDayCut / accountingDayEnd 两个 JobHandler。
+  # 日切全局锁（多实例不重复）、日终逐片锁 + 科目取模分片（不重不漏）；XXL 不可达自动回切本地兜底。
+  # **默认不自动跑批**：accounting.daycut.auto-enabled=false（DynamicConfig 可热更），
+  # 由 XXL-Job / 控制台 / POST /actuator/ppjob/accountingDayCut 显式触发，绝不干扰既有断言。
+  job:
+    xxl:
+      enabled: ${PAYMENT_XXL_ENABLED:true}
+      admin-addresses: ${PAYMENT_XXL_ADMIN:http://127.0.0.1:8094/xxl-job-admin}
+      appname: ${ACCOUNTING_XXL_APPNAME:payment-accounting-executor}
+      executor-ip: ${PAYMENT_XXL_EXECUTOR_IP:host.docker.internal}
+      port: ${ACCOUNTING_XXL_PORT:9994}
+      access-token: ${XXL_JOB_ACCESS_TOKEN:}
+      log-path: logs/xxl-job/accounting
+    local:
+      enabled: true
+      standby-when-xxl-healthy: true
+      stall-threshold-ms: 10000
+    shedlock:
+      enabled: true

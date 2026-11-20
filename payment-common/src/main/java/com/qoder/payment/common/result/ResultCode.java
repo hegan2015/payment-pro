@@ -8,10 +8,14 @@ public enum ResultCode {
 
     SUCCESS("00000", "成功"),
     PARAM_ERROR("A0400", "请求参数错误"),
+    UNAUTHORIZED("A0401", "未登录或会话已过期"),
+    FORBIDDEN("A0403", "无权限执行该操作"),
     NOT_FOUND("A0404", "资源不存在"),
     CONFLICT("A0409", "当前状态不允许该操作"),
+    TOO_MANY_REQUESTS("A0429", "请求过于频繁"),
     BIZ_ERROR("B0001", "业务处理失败"),
     SYSTEM_ERROR("B0002", "系统内部错误"),
+    DEGRADED("B0003", "服务熔断降级"),
     DOWNSTREAM_ERROR("C0001", "下游服务异常");
 
     private final String code;

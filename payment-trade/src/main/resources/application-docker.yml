@@ -7,3 +7,58 @@ spring:
   sql:
     init:
       mode: never
+
+# I-5b 交易域分库分表（单库分表，仅 docker）：
+#   trade_order 按 **merchant_id** 分 4 片（CRC32 % 4）。幂等唯一键 (merchant_id, out_trade_no)
+#   首列即分片键 ⇒ 同键必落同片，片内唯一键等价全局唯一键（ride trade.create 幂等语义不变）。
+#   **不分片**：tcc_branch_log / idempotent_record / sequences / shard_route_state。
+#   initial-active=false：启动即单库观察态，切流由 /actuator/ppshard 显式触发（差异非 0 即拒绝）。
+payment:
+  sharding:
+    enabled: ${PAYMENT_SHARDING_ENABLED:true}
+    initial-active: ${PAYMENT_FUND_SHARDING_ACTIVE:false}
+    shard-count: 4
+    tables:
+      trade_order: merchant_id
+    single-tables:
+      - tcc_branch_log
+      - idempotent_record
+      - sequences
+      - shard_route_state
+      # P1 · G 泳道 T-1/T-2/T-4 新表全部单库不分片：order_id/request_id/biz_no 是全局幂等键，
+      # 且含 UPDATE（影子写只 INSERT，分片会破坏回滚一致性）。I-3 锁表同样不分片。
+      - escrow_confirm_log
+      - preauth_record
+      - preauth_complete_log
+      - order_expire_log
+      - trade_system_account
+      - shedlock
+    readwrite-splitting: true
+    mirror-legacy: true
+    sql-show: ${PAYMENT_SHARDING_SQL_SHOW:true}
+    pool:
+      maximum-pool-size: 8
+      minimum-idle: 2
+  idgen:
+    worker-id: ${TRADE_IDGEN_WORKER_ID:-1}
+    zk-path: /payment-pro/idgen/workers
+  # I-3 分布式调度（T-4 tradeOrderExpire / T-1 escrowAutoConfirm）：
+  #   docker 接共享栈 XXL-Job admin:8094（执行器端口 9993，与 accounting9994/settle9995/recon9996/
+  #   notify9997/payment9998 错开）；调度中心不可达或未配置任务 → 本地兜底自动回切。
+  #   **自动跑批默认关闭**（trade.expire.auto.enabled / trade.escrow.auto.enabled 默认 false，
+  #   经 DynamicConfig 热更开启），作业只由 XXL-Job / 控制台 / /actuator/ppjob 显式触发。
+  job:
+    xxl:
+      enabled: ${PAYMENT_XXL_ENABLED:true}
+      admin-addresses: ${PAYMENT_XXL_ADMIN:http://127.0.0.1:8094/xxl-job-admin}
+      appname: ${TRADE_XXL_APPNAME:payment-trade-executor}
+      executor-ip: ${PAYMENT_XXL_EXECUTOR_IP:host.docker.internal}
+      port: ${TRADE_XXL_PORT:9993}
+      access-token: ${XXL_JOB_ACCESS_TOKEN:}
+      log-path: logs/xxl-job/trade
+    local:
+      enabled: true
+      standby-when-xxl-healthy: true
+      stall-threshold-ms: 10000
+    shedlock:
+      enabled: true

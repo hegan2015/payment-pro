@@ -7,3 +7,28 @@ spring:
   sql:
     init:
       mode: never
+  # M-5 C 端会话外置（共享 Redis；读写异常自动降级内存）
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+
+# M-5 docker：会员会话入共享 Redis（多实例共享/重启存活）
+# S-1 收尾：docker 默认启用 Vault 开关；VAULT_ADDR/VAULT_TOKEN 未配置（共享栈暂无 Vault 容器）
+# 时 VaultSecretProvider 自动降级 LocalFileSecretProvider（零依赖不报错）。
+# 接入真实 Vault：在 ~/.config/payment-pro/docker.env 配 VAULT_ADDR/VAULT_TOKEN 即可，无需改代码。
+payment:
+  member:
+    session:
+      redis:
+        enabled: true
+  secret:
+    vault:
+      enabled: ${VAULT_ENABLED:true}
+      url: ${VAULT_ADDR:}
+      token: ${VAULT_TOKEN:}
+
+management:
+  health:
+    redis:
+      enabled: true

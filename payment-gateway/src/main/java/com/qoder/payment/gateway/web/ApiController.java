@@ -1,12 +1,17 @@
 package com.qoder.payment.gateway.web;
 
+import com.qoder.payment.common.config.ConfigKeys;
+import com.qoder.payment.common.config.DynamicConfig;
 import com.qoder.payment.common.result.Result;
 import com.qoder.payment.facade.account.AccountFacade;
 import com.qoder.payment.facade.accounting.AccountingFacade;
 import com.qoder.payment.facade.accounting.EntryQuery;
+import com.qoder.payment.facade.accounting.PostRequest;
+import com.qoder.payment.facade.accounting.ReverseRequest;
 import com.qoder.payment.facade.accounting.TopupRequest;
 import com.qoder.payment.facade.cashier.CashierFacade;
 import com.qoder.payment.facade.channel.ChannelFacade;
+import com.qoder.payment.facade.channel.ChannelReceiptRequest;
 import com.qoder.payment.facade.member.MemberCreateRequest;
 import com.qoder.payment.facade.member.MemberFacade;
 import com.qoder.payment.facade.notify.NotifyFacade;
@@ -22,7 +27,6 @@ import com.qoder.payment.facade.trade.OrderCreateRequest;
 import com.qoder.payment.facade.trade.TradeFacade;
 import com.qoder.payment.gateway.service.HealthService;
 import org.apache.dubbo.config.annotation.DubboReference;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -72,12 +76,11 @@ public class ApiController {
     private ReconFacade reconFacade;
 
     private final HealthService healthService;
+    private final DynamicConfig dynamicConfig;
 
-    @Value("${payment.fee-bps:60}")
-    private int feeBps;
-
-    public ApiController(HealthService healthService) {
+    public ApiController(HealthService healthService, DynamicConfig dynamicConfig) {
         this.healthService = healthService;
+        this.dynamicConfig = dynamicConfig;
     }
 
     @GetMapping("/health")
@@ -88,7 +91,7 @@ public class ApiController {
     @GetMapping("/stats")
     public Object stats() {
         Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("feeBps", feeBps);
+        stats.put("feeBps", dynamicConfig.getInt(ConfigKeys.PAYMENT_FEE_BPS, ConfigKeys.DEFAULT_FEE_BPS));
         stats.put("members", count(() -> memberFacade.list().orThrow().size()));
         stats.put("accounts", count(() -> accountFacade.list(null).orThrow().size()));
         stats.put("orders", count(() -> tradeFacade.listOrders().orThrow().size()));
@@ -116,6 +119,12 @@ public class ApiController {
     @GetMapping("/members")
     public ResponseEntity<Object> members() {
         return GatewaySupport.of(memberFacade.list());
+    }
+
+    /** 会员详情（脱敏，E-1）：密钥/证书管理页与回归脚本用。 */
+    @GetMapping("/members/{id}")
+    public ResponseEntity<Object> member(@PathVariable String id) {
+        return GatewaySupport.of(memberFacade.get(id));
     }
 
     @PostMapping("/members")
@@ -186,6 +195,22 @@ public class ApiController {
         return GatewaySupport.of(accountingFacade.transfer(bizNo));
     }
 
+    @PostMapping("/accounting/transfers/{bizNo}/reverse")
+    public ResponseEntity<Object> reverse(@PathVariable String bizNo, @RequestBody ReverseRequest request) {
+        request.setOrigBizNo(bizNo);
+        return GatewaySupport.of(accountingFacade.reverse(request));
+    }
+
+    @PostMapping("/accounting/suspense")
+    public ResponseEntity<Object> suspense(@RequestBody PostRequest request) {
+        return GatewaySupport.of(accountingFacade.suspensePost(request));
+    }
+
+    @GetMapping("/accounting/suspense/balance")
+    public ResponseEntity<Object> suspenseBalance() {
+        return GatewaySupport.of(accountingFacade.suspenseBalance());
+    }
+
     @GetMapping("/accounting/trial")
     public ResponseEntity<Object> trial() {
         return GatewaySupport.of(accountingFacade.trial());
@@ -244,6 +269,21 @@ public class ApiController {
     @GetMapping("/channel/trades")
     public ResponseEntity<Object> channelTrades() {
         return GatewaySupport.of(channelFacade.listTrades());
+    }
+
+    @GetMapping("/channel/trades/{bizNo}")
+    public ResponseEntity<Object> channelTrade(@PathVariable String bizNo) {
+        return GatewaySupport.of(channelFacade.queryChannelTrade(bizNo));
+    }
+
+    @PostMapping("/channel/receipt")
+    public ResponseEntity<Object> channelReceipt(@RequestBody ChannelReceiptRequest request) {
+        return GatewaySupport.of(channelFacade.receiveReceipt(request));
+    }
+
+    @PostMapping("/payments/{id}/reconverge")
+    public ResponseEntity<Object> reconverge(@PathVariable String id) {
+        return GatewaySupport.of(paymentFacade.reconverge(id));
     }
 
     @GetMapping("/settle/summary")

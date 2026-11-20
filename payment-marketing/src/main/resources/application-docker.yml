@@ -1,0 +1,28 @@
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/pp_marketing?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:}
+  sql:
+    init:
+      mode: never
+
+payment:
+  # docker 与 local 同构：单库单表（状态机 + 全局幂等唯一键不分片），不加载 ShardingSphere Bean。
+  sharding:
+    enabled: false
+  job:
+    xxl:
+      enabled: false
+    local:
+      enabled: true
+    shedlock:
+      enabled: true
+  marketing:
+    # 生产面关闭 local 自检 API：营销写操作只经网关 /api/marketing/**（Bearer + RBAC + 审计）。
+    local-api: ${MARKETING_LOCAL_API:false}
+    points-exchange-rate: ${MARKETING_POINTS_RATE:100}
+    points-valid-days: ${MARKETING_POINTS_VALID_DAYS:365}
+    voucher-valid-days: ${MARKETING_VOUCHER_VALID_DAYS:30}
+    expire-fixed-delay-ms: ${MARKETING_EXPIRE_DELAY:60000}

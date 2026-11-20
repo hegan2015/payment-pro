@@ -9,10 +9,89 @@ spring:
       mode: never
 
 payment:
+  # I-5b 资金域分库分表（单库分表，仅 docker）：
+  #   payment 按 id（paymentId）分 4 片、refund_record 按 payment_id 分 4 片（CRC32 % 4）。
+  #   **协调器库表不分片**：dtx_transaction / dtx_branch / outbox + idempotent_record / sequences /
+  #   shedlock / amount_review + 新增 payment_request_index / refund_request_index / shard_route_state。
+  #   跨片全局幂等靠单库索引表占位（与业务单同一本地事务），**paymentId 形态不变**（P+数字）。
+  #   initial-active=false：装配分片 Bean 但启动即「单库观察态」，切流由 /actuator/ppshard 显式触发；
+  #   路由状态持久化于 shard_route_state，切流后重启自动恢复分片态（权威侧不丢）。
+  #   一键回滚：POST /actuator/ppshard {"action":"toggle","enabled":false} 或 PAYMENT_SHARDING_ENABLED=false。
+  sharding:
+    enabled: ${PAYMENT_SHARDING_ENABLED:true}
+    initial-active: ${PAYMENT_FUND_SHARDING_ACTIVE:false}
+    shard-count: 4
+    tables:
+      payment: id
+      refund_record: payment_id
+    single-tables:
+      - dtx_transaction
+      - dtx_branch
+      - outbox
+      - idempotent_record
+      - sequences
+      - shedlock
+      - amount_review
+      - payment_request_index
+      - refund_request_index
+      - shard_route_state
+      # P1-I 编排新表（P-2/P-3/P-5 + CHALLENGE）：单库不分片（编排/留痕/授权非资金分片表）
+      - payment_leg
+      - share_order
+      - share_detail
+      - payment_close_log
+      - payment_challenge
+      # P2-E P-7 营销抵扣明细（编排留痕，非资金分片表）
+      - payment_marketing_leg
+    readwrite-splitting: true
+    mirror-legacy: true
+    sql-show: ${PAYMENT_SHARDING_SQL_SHOW:true}
+    pool:
+      maximum-pool-size: 8
+      minimum-idle: 2
+  idgen:
+    worker-id: ${PAYMENT_IDGEN_WORKER_ID:-1}
+    zk-path: /payment-pro/idgen/workers
+  # S-7 大额双人复核（与 local 同构）：阈值环境变量可覆盖。
+  review:
+    enabled: ${REVIEW_ENABLED:true}
+    threshold: ${REVIEW_THRESHOLD:1000000}
   mq:
-    enabled: true
+    # I-4 回滚总开关（§5.2）：false=不加载任何 MQ bean，纯 outbox 轮询（local 等价路径）
+    enabled: ${PAYMENT_MQ_ENABLED:true}
     namesrv: ${ROCKETMQ_NAMESRV:127.0.0.1:9876}
     topic: PP_OUTBOX
     producer-group: payment-outbox-producer
     consumer-group: payment-outbox-consumer
     fallback-grace-ms: 4000
+    # I-4 事务消息主路径：半消息+本地事务判定+回查；false=afterCommit 普通消息（一键回滚，升级前等价）
+    transactional: ${PAYMENT_MQ_TRANSACTIONAL:true}
+    # I-4 多 topic 分流：PP_PAY/PP_REFUND/PP_SHARE/PP_SETTLE/PP_SIGN；false=全部 PP_OUTBOX（回滚单 topic）
+    multi-topic: ${PAYMENT_MQ_MULTI_TOPIC:true}
+    pay-topic: PP_PAY
+    refund-topic: PP_REFUND
+    share-topic: PP_SHARE
+    settle-topic: PP_SETTLE
+    sign-topic: PP_SIGN
+    # 混沌注入（仅 verify-mq.py 经环境变量启用，默认 0 完全不生效）：半消息判定前延迟，制造 commit 前崩溃窗口
+    tx-chaos-delay-ms: ${PAYMENT_MQ_TX_CHAOS_DELAY_MS:0}
+  # I-3 分布式调度：执行器注册到共享栈 XXL-Job admin（claim-shared-xxl-job-admin:8094）。
+  # accessToken 由 ~/.config/payment-pro/docker.env 的 XXL_JOB_ACCESS_TOKEN 注入（仓库外，不落仓库）。
+  # executor-ip=host.docker.internal：调度中心在容器内，须经 Docker Desktop DNS 回调宿主执行器。
+  # 降级：admin 不可达/未驱动某作业 → LocalScheduledRunner 自动回切本地 @Scheduled 兜底（补偿不停摆）。
+  job:
+    xxl:
+      enabled: ${PAYMENT_XXL_ENABLED:true}
+      admin-addresses: ${PAYMENT_XXL_ADMIN:http://127.0.0.1:8094/xxl-job-admin}
+      appname: ${PAYMENT_XXL_APPNAME:payment-executor}
+      executor-ip: ${PAYMENT_XXL_EXECUTOR_IP:host.docker.internal}
+      port: ${PAYMENT_XXL_PORT:9998}
+      access-token: ${XXL_JOB_ACCESS_TOKEN:}
+      log-path: logs/xxl-job/payment
+      probe-interval-ms: 3000
+    local:
+      enabled: true
+      standby-when-xxl-healthy: true
+      stall-threshold-ms: 10000
+    shedlock:
+      enabled: true

@@ -1,0 +1,186 @@
+/* =====================================================================
+ * payment-pro 管理控制台 · 两级导航 IA + 运营页通用组件样式
+ * 零构建 / 零 CDN / 零外部库；只复用 index.html 既有设计令牌（--primary/--border/...）。
+ * 本文件由 UI 泳道第 1 棒新增；后续棒次可追加 .pp-* 组件，勿改既有 index.html 内联样式。
+ * ===================================================================== */
+
+/* ---------- 外壳：左侧两级导航 + 右侧内容 ---------- */
+.pp-shell { display:flex; align-items:flex-start; }
+.pp-content { flex:1; min-width:0; }
+
+nav#ppNav { display:block; width:244px; flex:none; padding:0; gap:0;
+  background:var(--card); border-bottom:none; border-right:1px solid var(--border);
+  position:sticky; top:0; align-self:flex-start; max-height:100dvh; overflow-y:auto; overflow-x:hidden; }
+.pp-nav-top { padding:10px 12px; border-bottom:1px solid var(--border); background:var(--card);
+  position:sticky; top:0; z-index:3; }
+.pp-nav-top .pp-jump-wrap { position:relative; }
+#ppJump { width:100%; min-width:0; font-size:13px; padding:7px 9px; }
+.pp-jump-list { position:absolute; left:0; right:0; top:36px; z-index:9; background:#fff;
+  border:1px solid var(--border); border-radius:8px; box-shadow:0 10px 26px rgba(15,23,42,.16);
+  max-height:280px; overflow-y:auto; }
+.pp-jump-list[hidden] { display:none; }
+.pp-jump-list div { padding:6px 10px; font-size:12px; cursor:pointer; display:flex; gap:6px; align-items:center; }
+.pp-jump-list div:hover, .pp-jump-list div.on { background:var(--info-soft); color:var(--primary-dark); }
+.pp-jump-list .g { color:var(--muted); font-size:11px; }
+.pp-nav-tools { display:flex; gap:6px; margin-top:8px; align-items:center; }
+.pp-tool { border:1px solid var(--border); background:#fff; color:var(--muted); border-radius:7px;
+  padding:4px 6px; font-size:11px; cursor:pointer; text-align:center; user-select:none; }
+.pp-nav-tools .pp-tool { flex:1; }
+.pp-tool:hover { border-color:var(--primary); color:var(--primary); }
+
+.pp-grp { border-bottom:1px solid #f1f5f9; }
+.pp-grp[hidden] { display:none; }
+.pp-grp-head { display:flex; align-items:center; gap:8px; padding:9px 12px; cursor:pointer;
+  font-size:12px; color:var(--muted); font-weight:600; user-select:none; }
+.pp-grp-head:hover { background:#f8fafc; color:var(--text); }
+.pp-grp-head .pp-caret { margin-left:auto; font-size:10px; transition:transform .15s; }
+.pp-grp.collapsed .pp-caret { transform:rotate(-90deg); }
+.pp-grp.collapsed .pp-grp-body { display:none; }
+.pp-grp-head.on { color:var(--primary-dark); }
+.pp-grp-body { padding-bottom:6px; }
+.pp-grp-idx { font-size:10px; color:#94a3b8; font-variant-numeric:tabular-nums; }
+
+nav#ppNav button { display:flex; width:100%; text-align:left; gap:8px; align-items:center;
+  border:none; background:none; border-bottom:none; border-left:3px solid transparent;
+  padding:7px 12px 7px 13px; font-size:13px; color:var(--text); cursor:pointer; }
+nav#ppNav button:hover { background:#f1f5f9; }
+nav#ppNav button.active { color:var(--primary); background:var(--info-soft);
+  border-left-color:var(--primary); border-bottom-color:transparent; font-weight:600; }
+nav#ppNav button[hidden] { display:none; }
+.pp-ico { flex:none; width:20px; height:20px; border-radius:6px; background:#eef2f7; color:#475569;
+  font-size:11px; display:flex; align-items:center; justify-content:center; }
+nav#ppNav button.active .pp-ico { background:var(--primary); color:#fff; }
+.pp-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pp-soon { flex:none; font-size:10px; color:#94a3b8; border:1px solid var(--border);
+  border-radius:999px; padding:0 6px; }
+
+/* ---------- 面包屑 / 最近访问 ---------- */
+.pp-crumb { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:14px 28px 0;
+  font-size:12px; color:var(--muted); max-width:1280px; margin:0 auto; }
+.pp-crumb b { color:var(--text); font-size:14px; }
+.pp-crumb .sep { color:#cbd5e1; }
+.pp-crumb .pp-recent { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.pp-crumb .pp-recent button { border:1px solid var(--border); background:#fff; color:var(--muted);
+  border-radius:999px; padding:2px 9px; font-size:11px; cursor:pointer; }
+.pp-crumb .pp-recent button:hover { border-color:var(--primary); color:var(--primary); }
+main { padding-top:12px; }
+
+/* ---------- 窄屏 / 手动折叠：图标栏 ---------- */
+body.pp-rail nav#ppNav { width:58px; }
+body.pp-rail .pp-jump-wrap, body.pp-rail .pp-nav-tools,
+body.pp-rail .pp-grp-name, body.pp-rail .pp-grp-idx, body.pp-rail .pp-caret,
+body.pp-rail nav#ppNav button .pp-label, body.pp-rail .pp-soon { display:none; }
+body.pp-rail .pp-grp-head { justify-content:center; padding:8px 0; }
+body.pp-rail nav#ppNav button { justify-content:center; padding:8px 0; }
+body.pp-rail .pp-nav-top { padding:8px 6px; }
+body.pp-rail #ppNavRail { display:none; }
+body.pp-rail .pp-rail-only { display:block; }
+.pp-rail-only { display:none; }
+body.pp-rail .pp-crumb, body.pp-rail main { padding-left:16px; padding-right:16px; }
+@media (max-width:760px) {
+  .pp-crumb { padding-left:14px; padding-right:14px; }
+  main { padding-left:14px; padding-right:14px; }
+}
+
+/* ---------- 运营页通用组件（后续棒次可直接复用） ---------- */
+.pp-grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:12px; }
+.pp-grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+.pp-sub { font-size:12px; color:var(--muted); margin:-6px 0 10px; line-height:1.7; }
+.pp-code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; line-height:1.7;
+  background:#0f172a; color:#e2e8f0; border-radius:8px; padding:10px 12px; overflow-x:auto; white-space:pre-wrap; word-break:break-all; }
+.pp-code.light { background:#f8fafc; color:#334155; border:1px solid var(--border); }
+textarea.pp-dsl { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; min-height:88px; line-height:1.7; }
+.pp-meter { height:7px; border-radius:999px; background:#e2e8f0; overflow:hidden; min-width:70px; }
+.pp-meter i { display:block; height:100%; background:var(--primary); }
+.pp-meter.warn i { background:var(--warning); }
+.pp-meter.bad i { background:var(--danger); }
+.pp-inline { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.pp-bar-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+.pp-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end; }
+.pp-form .field input, .pp-form .field select { width:100%; min-width:0; }
+.pp-form .wide { grid-column:1/-1; }
+.pp-note { font-size:11px; color:var(--muted); line-height:1.7; }
+.pp-kpi { display:flex; gap:8px; align-items:baseline; }
+.pp-kpi b { font-size:20px; font-variant-numeric:tabular-nums; }
+.pp-split { display:flex; gap:12px; flex-wrap:wrap; }
+.pp-split > div { flex:1; min-width:280px; }
+.pp-tag { display:inline-block; font-size:11px; padding:1px 8px; border-radius:999px;
+  background:#f1f5f9; border:1px solid var(--border); color:#475569; }
+.pp-tag.on { background:var(--success-soft); border-color:#bbf7d0; color:#166534; }
+.pp-tag.off { background:#f1f5f9; color:#64748b; }
+.pp-tag.warn { background:var(--warning-soft); border-color:#fed7aa; color:#9a3412; }
+.pp-tag.bad { background:var(--danger-soft); border-color:#fecaca; color:#991b1b; }
+.pp-tag.info { background:var(--info-soft); border-color:#bfdbfe; color:#1e40af; }
+.pp-graph { display:flex; flex-wrap:wrap; gap:8px; }
+.pp-node { border:1px solid var(--border); border-radius:9px; padding:7px 10px; background:#f8fafc; font-size:12px; }
+.pp-node b { display:block; font-size:12px; }
+.pp-node.hub { background:var(--info-soft); border-color:#bfdbfe; }
+.pp-flow { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px; }
+.pp-flow .st { border:1px solid var(--border); border-radius:999px; padding:3px 10px; background:#f8fafc; color:var(--muted); }
+.pp-flow .st.on { background:var(--info-soft); border-color:#bfdbfe; color:#1e40af; font-weight:600; }
+.pp-flow .ar { color:#cbd5e1; }
+.pp-tl { list-style:none; font-size:12px; }
+.pp-tl li { padding:4px 0 4px 14px; border-left:2px solid var(--border); position:relative; color:var(--muted); }
+.pp-tl li::before { content:''; position:absolute; left:-5px; top:11px; width:8px; height:8px;
+  border-radius:50%; background:var(--primary); }
+.pp-tl li b { color:var(--text); }
+.pp-soon-card { border:1px dashed #cbd5e1; border-radius:12px; padding:18px; background:#fbfdff; }
+.pp-soon-card h3 { font-size:15px; margin-bottom:8px; }
+.pp-soon-card ul { margin:8px 0 0 18px; font-size:13px; color:var(--muted); line-height:1.9; }
+.pp-mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+.pp-scroll { max-height:340px; overflow-y:auto; }
+.badge.DRAFT { background:#e2e8f0; color:#475569; }
+.badge.ENABLED,.badge.PUBLISHED,.badge.SUBMITTED { background:#dcfce7; color:#166534; }
+.badge.DISABLED,.badge.SUPERSEDED,.badge.REMOVED { background:#e2e8f0; color:#475569; }
+.badge.SHADOW,.badge.GRAY { background:#ede9fe; color:#5b21b6; }
+.badge.DEGRADED,.badge.COMPILE_FAILED { background:#fee2e2; color:#991b1b; }
+.badge.PASS,.badge.MATCHED,.badge.PARSED { background:#dcfce7; color:#166534; }
+.badge.REJECT,.badge.DIFF { background:#fee2e2; color:#991b1b; }
+.badge.CHALLENGE,.badge.LIMIT,.badge.REVIEW { background:#fef3c7; color:#92400e; }
+.badge.BLACK { background:#fee2e2; color:#991b1b; }
+.badge.WHITE { background:#dcfce7; color:#166534; }
+.badge.GRAYLIST { background:#e2e8f0; color:#475569; }
+
+/* ---------- UI 第 2 棒：清结算 / 账务 / 对账 / 支付编排 运营页补充组件 ---------- */
+/* 守恒可视化卡：diff=0 绿色，≠0 红色告警（配合 .pp-meter） */
+.pp-cons { border:1px solid #bbf7d0; background:var(--success-soft); border-radius:10px;
+  padding:9px 12px; margin:8px 0; }
+.pp-cons.bad { border-color:#fecaca; background:var(--danger-soft); }
+.pp-cons b { font-size:12px; }
+.pp-cons .pp-mono { font-variant-numeric:tabular-nums; }
+/* 状态机流程条：已完成 / 当前失败态 */
+.pp-flow .st.done { background:#f1f5f9; border-color:#cbd5e1; color:#475569; }
+.pp-flow .st.bad { background:var(--danger-soft); border-color:#fecaca; color:#991b1b; font-weight:600; }
+/* 新增单据状态 badge（既有 badge 口径不动，仅追加） */
+.badge.SETTLING,.badge.RUNNING,.badge.PENDING_PAY { background:#fef3c7; color:#92400e; }
+.badge.SHARED,.badge.APPLIED,.badge.USED,.badge.CUT,.badge.GENERATED { background:#dcfce7; color:#166534; }
+.badge.BACKED,.badge.ROLLED_BACK,.badge.REVERSED { background:#ede9fe; color:#5b21b6; }
+.badge.PARTIAL,.badge.UNKNOWN,.badge.DEFAULT { background:#e2e8f0; color:#475569; }
+.badge.CUSTOM,.badge.TIERED,.badge.FIXED { background:#cffafe; color:#155e75; }
+.badge.LONG { background:#fef3c7; color:#92400e; }
+.badge.SHORT,.badge.AMOUNT,.badge.STATUS,.badge.MISSING { background:#fee2e2; color:#991b1b; }
+/* ---------- UI 第 3 棒：交易 / 会员商户 / 通知 / 开放平台 / 平台治理 运营页补充组件 ---------- */
+/* 产品 / 应用 / 方式卡片（内嵌小表） */
+.pp-prod { border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin:8px 0; background:#fff; }
+.pp-prod > .pp-inline:first-child { margin-bottom:4px; }
+.pp-prod .table-wrap { max-height:260px; overflow:auto; }
+/* 高危切流警示条（分片 toggle / 灰度切流）：显著、不可忽略 */
+.pp-alert { border:2px solid #dc2626; background:#fef2f2; border-radius:12px; padding:12px 14px; margin:10px 0; }
+.pp-alert h4 { margin:0 0 6px; color:#991b1b; font-size:14px; letter-spacing:.3px; }
+.pp-alert ul { margin:6px 0 0 18px; padding:0; color:#7f1d1d; font-size:12.5px; line-height:1.85; }
+.pp-alert .pp-mono { background:#fff; border:1px solid #fecaca; padding:0 4px; border-radius:4px; }
+.pp-alert.warn { border-color:#d97706; background:#fffbeb; }
+.pp-alert.warn h4 { color:#92400e; } .pp-alert.warn ul { color:#78350f; }
+/* 批量选择行 / 只读观测提示 */
+.pp-chk { width:16px; height:16px; min-width:auto !important; vertical-align:middle; }
+.pp-obs { border-left:3px solid #0ea5e9; background:#f0f9ff; padding:8px 12px; border-radius:0 8px 8px 0;
+  font-size:12.5px; color:#075985; margin:8px 0; }
+/* 键值紧凑网格（配额 / 指标 / 版本） */
+.pp-grid.kv2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:8px; }
+/* 新增状态 badge（追加，不改既有口径） */
+.badge.REVOKED,.badge.UNBOUND,.badge.EXPIRED,.badge.CANCELLED { background:#fee2e2; color:#991b1b; }
+.badge.SUPPLEMENT,.badge.SUBMITTED,.badge.REVIEWING,.badge.AUTHORIZED { background:#fef3c7; color:#92400e; }
+.badge.HOLD,.badge.PARTIAL_COMPLETED,.badge.COMPLETED,.badge.CONFIRMED,.badge.AUTO_CONFIRMED,
+.badge.SIGNED,.badge.BOUND,.badge.STABLE,.badge.CURRENT,.badge.DELIVERED { background:#dcfce7; color:#166534; }
+.badge.DEPRECATED,.badge.FROZEN_JUDICIAL,.badge.DOWNGRADE { background:#ede9fe; color:#5b21b6; }
+.badge.I,.badge.II,.badge.III,.badge.IV,.badge.SANDBOX,.badge.PROD { background:#cffafe; color:#155e75; }

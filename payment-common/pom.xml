@@ -22,6 +22,69 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>
+        <!-- I-8 业务指标：MetricsSupport 仅依赖 micrometer-core（无外部中间件），
+             注册表由各域 actuator + micrometer-registry-prometheus 提供 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- I-3 调度（F 泳道）：JobControlEndpoint 用 actuator @Endpoint 注解；
+             各域经 starter-actuator 提供运行期端点，common 编译期 optional 不强制传递 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-actuator</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- I-3 ShedLock（F 泳道注释约定：锁经 payment-common 传递；自研 JdbcEpochLockProvider 基于 core SPI，
+             net.javacrumbs.shedlock.support.* 亦在 shedlock-core 内，无独立 support artifact） -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+        </dependency>
+        <!-- I-3 XXL-Job（F 泳道）：XxlJobHandlerAdapter/XxlJobRegistrar 编译期需要；
+             local 不启用 executor（@ConditionalOnProperty），jar 在而不连接（与 rocketmq-client 同例） -->
+        <dependency>
+            <groupId>com.xuxueli</groupId>
+            <artifactId>xxl-job-core</artifactId>
+        </dependency>
+        <!-- I-2 Apollo（E 泳道）：ApolloDynamicConfig 编译期需要；local 走 LocalFileDynamicConfig 不连接 -->
+        <dependency>
+            <groupId>com.ctrip.framework.apollo</groupId>
+            <artifactId>apollo-client</artifactId>
+        </dependency>
+        <!-- I-7 Sentinel（G 泳道）：SentinelRuleLoader 编译期需要；规则加载失败默认放行/保守阈值。
+             热点参数限流 ParamFlowRule 在独立 artifact sentinel-parameter-flow-control -->
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-parameter-flow-control</artifactId>
+        </dependency>
+        <!-- I-5a ShardingSphere-JDBC：ShardingAutoConfiguration / Crc32ModShardingAlgorithm / HintManager
+             编译期需要；local 与未开启分片的域 @ConditionalOnProperty 不装配 Bean、不建连接
+             （与 rocketmq-client / xxl-job-core / apollo-client 同例：jar 在而不连接） -->
+        <dependency>
+            <groupId>org.apache.shardingsphere</groupId>
+            <artifactId>shardingsphere-jdbc</artifactId>
+        </dependency>
+        <!-- I-5a workerId 分配（ZK 临时节点）：编译期需要，运行期由各域
+             dubbo-dependencies-zookeeper-curator5 提供（settle/recon 均已引入） -->
+        <dependency>
+            <groupId>org.apache.curator</groupId>
+            <artifactId>curator-framework</artifactId>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>

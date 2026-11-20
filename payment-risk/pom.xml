@@ -11,7 +11,8 @@
 
     <artifactId>payment-risk</artifactId>
     <name>payment-risk</name>
-    <description>风控域：单笔限额 + 频率控制（规则引擎简化版）</description>
+    <description>风控域：R-1 QLExpress 规则引擎（动态下发/灰度/回滚/影子）+ R-2 多维限额
+        + R-3 名单服务 + R-4 风险评分与分级处置（内置单笔限额/限频保守规则口径不变）</description>
 
     <dependencies>
         <dependency>
@@ -26,6 +27,19 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
         </dependency>
+        <!-- I-8 可观测：actuator + Prometheus 指标；内嵌 Tomcat 仅承载 management 端点（无业务控制器） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
@@ -38,6 +52,20 @@
             <groupId>org.apache.dubbo</groupId>
             <artifactId>dubbo-dependencies-zookeeper-curator5</artifactId>
             <type>pom</type>
+        </dependency>
+        <!-- R-1 规则引擎：QLExpress（纯 Java 库，local 零依赖；版本由根 pom dependencyManagement 统一） -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>QLExpress</artifactId>
+        </dependency>
+        <!-- R-1~R-4 持久化：规则集版本/处置留痕/护栏告警/人审（local H2 / docker MySQL pp_risk） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

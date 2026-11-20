@@ -38,3 +38,11 @@ CREATE TABLE IF NOT EXISTS idempotent_record (
     created_at BIGINT      NOT NULL,
     PRIMARY KEY (biz_type, biz_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================================
+-- P1 第二期 ST-1~ST-5 新表 DDL 见 com.qoder.payment.settle.config.SettleSchema
+-- （幂等 CREATE TABLE IF NOT EXISTS + seq_settle_st 种子行 + shedlock 锁表）。
+-- 现存 pp_settle 库由 SettleShardPreBootstrap / SettleSchemaUpgrade 在启动期自动补建，
+-- 无需手工执行本脚本、不改 ops-pro。全部新表单库不分片（见 application-docker.yml
+-- payment.sharding.single-tables）；settle_record 与其分片表结构一字未改。
+-- ============================================================================

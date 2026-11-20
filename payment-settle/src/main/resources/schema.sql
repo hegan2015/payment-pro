@@ -25,3 +25,15 @@ CREATE TABLE IF NOT EXISTS idempotent_record (
     created_at BIGINT      NOT NULL,
     PRIMARY KEY (biz_type, biz_no)
 );
+
+-- ============================================================================
+-- P1 第二期 ST-1~ST-5 清结算工作流新表（settle_cycle / settle_batch / settle_batch_item /
+-- fee_rule / fee_rule_audit / settle_share_detail / withdraw_order / merchant_bill / shedlock）
+-- 的 DDL 单一事实来源在 com.qoder.payment.settle.config.SettleSchema（幂等、只增不改，
+-- H2/MySQL 双方言），由 SettleSchemaUpgrade（local/未分片）与 SettleShardPreBootstrap
+-- （docker 分片态，早于 ShardingSphere DataSource）两个入口执行。
+-- 原因：docker sql.init.mode=never 不重跑本脚本，且分片 SINGLE 规则要求新表先于元数据加载存在。
+-- 归属：全部单库不分片（状态机/协调器表含 UPDATE，影子写只 INSERT；withdraw_order.request_id
+-- 与 settle_share_detail(share_id,receiver) 是全局幂等键，分片后唯一键无法跨片保证）。
+-- settle_record 保持原样不 ALTER（不可变 + 影子副本逐列一致 ⇒ 分片回滚后逐条一致）。
+-- ============================================================================

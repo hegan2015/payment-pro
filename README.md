@@ -2,7 +2,13 @@
 
 > 参考支付宝领域划分的工业级支付系统
 > Spring Boot 3.2 + Apache Dubbo 3.2 + 自研 XTS 风格 TCC + 事务性 Outbox
-> 版本：1.8.0 ｜ 文档日期：2026-11-18
+> 版本：2.0.0（P0 23/23 + P1 47/47 + P2 17/19 验收；I-1 批准不做列入部署必改，I-6 待实现）｜ 文档日期：2026-11-20
+> **文档三件套**：[REQUIREMENTS.md](REQUIREMENTS.md)（需求规格与验收）· [ARCHITECTURE.md](ARCHITECTURE.md)（架构与不变量红线）· 本文（详细设计/字段级 DDL/代码走读）
+> v2.0 P2 更新：**增值生态 17/19 验收**（详见 §21）——交易产品/担保/预授权/超时关闭、合并支付与分阶段、撤销vs退款边界与改价、组合支付叠加、保证金垫资、多币种、营销抵扣编排、开放平台应用授权/沙箱/配额计费/版本SDK、签约代扣、账户生命周期、多客户端、分片与影子双跑、灰度、可观测。**管理台 22 个原待建页全部建成真实页面并浏览器逐页实测 22/22 通过**，12 业务分组两级导航 69 项。
+> **v2.0 收口挖出并修复 8 个真缺陷**（T-5/T-6 代码早已落盘但验证脚本从未跑过，一跑即暴露；详见 §21.10）：MERGE_COMBO 退款腿级不守恒、分阶段撤销后无法重付、改价原价留痕被覆盖、合并受理前失败悬挂 PAYING、TCC 回滚不重开合并单、reopenMerge 拒绝 CLOSED 终态子订单、清算跑批 8s 超时误判 503、监控逐条远程查对端自撞 429。
+> **v2.0 双账本修复**（ride-pro 侧，详见 ARCHITECTURE §9.3）：在途误确认终态守卫、CARD 出资改外部清算户、监控基线污染、监控自撞限流；历史冲正已执行（pp RV8504 + ride 4 笔冲正腿），17 映射户全平、重算后 48+ 周期零报警。
+> v1.9 P1 更新：**核心支付能力 47 卡全验收**（详见 §20）——渠道 SPI/沙箱/路由择优/对账文件/限额维护窗、QLExpress 风控规则引擎+多维限额+名单+评分分级、KYC/进件审核流/C端登录/多账户类型/绑卡/四原因冻结、T+N 结算+三层费率+分账守恒+提现沙箱+商户账单、会计科目体系+日切日终+账簿凭证+账实核对、多事件通知+查询重发+Swagger+统一错误码+双实例无状态与灰度、担保/预授权/多产品路由/超时关闭、日切批量与渠道内外对账+报表+分片调度、支付路由/组合支付按腿落账/分账编排/退款异步化/关闭撤销、收银台多方式渲染+付款码扫码+支付验证。**v2.0 更正：平台不自建 C 端 H5**，收银台能力以 `cashier.*` OpenAPI 开放给业务方自渲染（ride-pro 乘客端已落地，视觉对标支付宝）。十专项全绿（channel 111/risk 116/member-account 109/settle 158/accounting 255/notify-gw 149/trade 131/recon 83/payment-orchestration 107/cashier 199），smoke 79 + verify-pro 22 + **ride 24/24 门禁六次通过**。新增七条流程护栏见 §20.11。
+> v1.9 更新：P0 生产化升级（详见 §19）——账务红冲蓝补/挂账科目与凭证防篡改、差错处理平台与自动冲正策略（默认影子模式）、渠道异步回执 + tcc-core WAITING 增量与补单收敛、通知 HMAC/RSA2 签名、控制台 OAuth2 + RBAC + 审计、商户密钥多版本轮换与证书到期告警、大额双人复核 + 备付金账实核对 + 二次认证、13 域 Micrometer/Prometheus 可观测。已验收 17/23 卡：smoke 79、verify-pro 22、reverse 16、suspense 28、notify-sign 20、dispute 73、fund-guard 34+8、rbac 51、secret 32、metrics 96、reconverge 26，**ride-pro verify-integration 24/24 兼容门禁通过**。wave3（Apollo/XXL-Job/Sentinel/事务消息）与 I-5 分片进行中。
 > v1.8 更新：Docker 中间件集成（详见 §18）——双 profile（local 零依赖 / docker 共享栈）；MySQL 单实例多库 pp_*（序列函数同构）；RocketMQ PP_OUTBOX 主投递 + outbox 轮询兜底；Redis Lua 风控滑动窗口 + 网关商户缓存；Docker ZooKeeper 2181（跳过内嵌 registry）；run.sh --docker + 只读 H2→MySQL 迁移工具。smoke 79/79、verify-pro 22/22（docker）回归通过。文档已全面对齐双 profile 实现：§1.2 关键取舍（outbox 为可靠性底座/MQ 可插拔、H2 local·MySQL docker）、§1.3 技术选型（全栈版本与取舍）、§5.1 存储选型、§12.1 验签（MerchantCache）、附录 A 代码索引、附录 C DDL（MySQL 方言/POST/订单幂等键）、附录 D 契约（post/entriesPage/fundPay）、附录 E 走读（5 参 insert+afterCommit MQ 主投递、行号刷新）、附录 F 边界（F.9 中间件降级与资金单）
 > v1.7 更新：充值/提现升级为资金单（fund.topup/fund.withdraw → 交易单+支付单，biz_type 区分 TRADE/TOPUP/WITHDRAW，SYS_FUND 系统资金商户、fee=0、BALANCE、完整 TCC）；账务流水跨账户全局分页查询（详见 §17）
 > v1.3 更新：HTTPS 8443 双连接器 + 自签证书自动生成；OpenAPI 扩展账户/退款/查询端点与通用幂等过账，支撑 ride-pro 双账本镜像接入（详见 §16）
@@ -31,6 +37,8 @@
 16. [OpenAPI 商户接入扩展（ride-pro 双账本对接）](#16-openapi-商户接入扩展v130ride-pro-双账本对接)
 17. [资金单与全局分页流水（v1.7.0）](#17-资金单与全局分页流水v170)
 18. [Docker 中间件集成（MySQL/RocketMQ/Redis/ZooKeeper）](#18-docker-中间件集成mysqlrocketmqrediszookeeper)
+19. [P0 生产化升级（v1.9.0）](#19-p0-生产化升级v190)
+20. [P1 核心支付能力（v1.9.0，47 卡全验收）](#20-p1-核心支付能力v19047-卡全验收)
 
 **深度附录（v1.1 细化）**
 
@@ -1118,6 +1126,367 @@ docker profile 不再启动 `payment-registry` 内嵌 ZK，改用共享栈 ZooKe
 - **Redis**：风控 ZSET `pp:risk:window:<payer>` 按时间戳评分、member 唯一、PTTL≈窗口长；网关缓存键 `pp:openapi:app:appM1` 命中；控制台支付单列表可见多条「交易过于频繁」限频拒绝（限流生效）。
 - **MySQL**：控制台实时渲染会员/账户/交易单/支付单（99 行），账务试算平衡（借=贷），13/13 健康。
 - **local 回退**：payment-risk 以 local profile 独立启动成功（`Started RiskApplication`，Redis 懒加载无连接、InMemoryRateLimiter 生效），证明新增依赖不破坏零依赖启动。
+
+## 19. P0 生产化升级（v1.9.0）
+
+> 依据 ROADMAP.md / SPEC.md / IMPLEMENTATION-PLAN.md（89 张任务卡：P0 23 / P1 47 / P2 19）。本章记录**已落地并实测验收**的 P0 能力；wave3（I-2 配置中心 / I-3 调度 / I-4 事务消息 / I-7 网关治理）与 I-5 分片进行中，落地后补入。
+
+### 19.1 升级红线（不可破坏）
+
+| 红线 | 约束 |
+|---|---|
+| ride-pro 双账本兼容 | 8 个 OpenAPI 方法冻结：`account.open`/`fund.topup`/`fund.withdraw`/`account.transfer`/`account.balance`/`trade.create`/`trade.pay`/`trade.query`，入参名/返回字段/幂等键/语义不变，新增字段仅可选 additive |
+| BALANCE 同步 | 无渠道分支保持同步受理→PROCESSING→SUCCESS，**不得引入 WAITING/异步回执**；tcc WAITING 仅对 CARD 异步渠道 opt-in 启用 |
+| HMAC 验签 | appId/sign/timestamp（**毫秒**）/TreeMap 排序 `k=v&` 机制不变；`/openapi/**` 不走 OAuth2/RBAC |
+| 通知回调 | 继续支持 **http** callbackUrl，签名头只能 additive，body 结构不变（ride 不验签也能收） |
+| 手续费口径 | feeBps→SYS_FEE 不变，动态配置默认值必须等于改造前现值 |
+| 事务内核 | 保留自研 **tcc-core**（不迁 Seata）、保留 **ZooKeeper**（不迁 Nacos） |
+| 可靠性底座 | **outbox 是唯一事实来源**，轮询兜底永不删除；服务端机制兜底一致性，前端补偿只管展示 |
+| 数据保护 | `data/` 与 H2/MySQL 数据删除重置须用户明确确认；schema 只能 additive |
+| 门禁 | 每波集成必跑 ride `verify-integration.py` **24/24** + payment `smoke-test.py` **79/79** 双绿才销项 |
+
+### 19.2 账务防线：红冲蓝补 + 挂账科目 + 凭证防篡改（AC-1 / S-6）
+
+- **红冲**：`AccountingService.reverse(ReverseRequest{origBizNo,reason,requestId})`，幂等键 `(REVERSE, origBizNo)`。冲正凭证 `bizNo="RV"+seq`、`ref_id=原 bizNo`、借贷腿 **D↔C 互换**，原凭证不可篡改；`TransferMapper.selectReverseByOrig`（`ref_id=orig AND biz_no LIKE 'RV%'`）派生关联，**无 schema 变更**。守卫 `origBizNo.matches("RV\d+")` 拒绝"冲正冲正单"。`TransferDTO.reverseBizNo` 回传。
+- **挂账**：新增系统科目 `SYS_SUSPENSE`，`AccountingFacade.suspensePost/suspenseBalance`，幂等键 `(SUSPENSE, bizNo)`；`TrialDTO.suspenseBalance` 纳入试算。
+- **凭证防篡改**：`VoucherGuard` 保证 `ledger_entry` append-only；`transfer_record.voucher_type` 区分 `NORMAL/REVERSE/SUSPENSE`（H2/MySQL 双份 additive）。
+- 端点：`POST /api/accounting/transfers/{bizNo}/reverse`、`POST /api/accounting/suspense`、`GET /api/accounting/suspense/balance`。
+- 实测：`verify-reverse.py` **16/16**、`verify-suspense.py` **28/28**。
+
+### 19.3 差错处理平台（X-1 / S-4 / RC-1 / N-2）
+
+- **表**（pp_recon，H2/MySQL 同构）：`dispute_order`（dispute_no UNIQUE、type、source、biz_no、payment_id、amount、status、strategy、assignee、fix_biz_no、check_name、biz_date…）、`dispute_fix_log`（每次动作留痕）。
+- **状态机**：`OPEN→ASSIGNED→FIXING→RESOLVED→CLOSED`，`OPEN/ASSIGNED→IGNORED`（reject）；非法迁移拒绝，终态不可再改。
+- **分类口径**（`DisputeClassifier`）：金额不一致 `AMOUNT_MISMATCH`→红冲+蓝补；单边账 `ONE_SIDED`/渠道缺失 `CHANNEL_MISSING`/手续费差 `FEE_MISMATCH`→挂账待人工；状态不一致 `STATUS_MISMATCH`→人工；通知死信 `NOTIFY_DEAD`→重放。
+- **RC-1 接入**：六项对账失败按差异性质幂等建单 `(DISPUTE, source[:checkName][:bizDate]:bizNo)`；**对账判定口径与 `POST /api/recon/run` 返回结构不变**；复核通过自动 `RESOLVED` 并留痕 `AUTO_RESOLVE`。
+- **S-4 自动修复**：**默认影子模式** `recon.dispute.autofix=false`（双 profile 一致），只给建议策略不动账；开启或人工 approve 才执行，修复凭证 bizNo 确定性生成（`DSPF/DSPB+disputeId`），幂等键 `(DISPUTE_FIX, disputeId)`，修复后校验试算平衡，失败回滚状态并告警。
+- **N-2**：通知重试耗尽→ERROR 告警 + `payment_notify_dead_total` + 自动建 `NOTIFY_DEAD` 工单（幂等 by notifyId）+ `NotifyFacade.replay` 重放，送达后自动核销。
+- **跨域接线**：S-7 备付金账实差异→`ReserveCheckService.raiseDispute`，`source=RESERVE`、`bizNo=核对流水号`、`strategy=MANUAL`（银行侧差异不臆断冲正）；差错平台不可达只降级告警，不阻断核对。
+- 端点：`GET /api/disputes`（分页/过滤）、`GET /api/disputes/{id}`（含审计）、`GET /api/disputes/stats`、`POST /api/disputes/{id}/assign|approve|reject|resolve|close`、`POST /api/disputes/autofix/run`。
+- 实测：`verify-dispute.py` **73/73**。
+- **坑**：指标名 `dispute_created` 与 Prometheus `_created` 采集序列冲突致建单回滚 → 更名 `dispute_new` + 指标静默降级。
+
+### 19.4 渠道异步回执与补单收敛（CH-1 / S-5 / P-1）
+
+- **tcc-core 增量**：`beginAwaiting/awaitExternal/resumeCommit/resumeCancel`，仅 CAS 迁移，**向后兼容**（同步路径逐字节不变）。`PAYMENT_CHANNEL_ASYNC=true` 才启用异步，默认 false；BALANCE/无渠道分支永不 WAITING。
+- **渠道域**：`ChannelQueryService.queryChannelTrade`（只读返回 CAS 状态）、`ChannelReceiptService.receiveReceipt`（终态回执落地 + `channel_receipt_log`）、`MockBankAsyncJob`（模拟银行异步落地）。
+- **支付域**：`ChannelCompletionService`（回执驱动 resumeCommit/resumeCancel）、`PaymentReconcileJob/Service/Decision` + `ReconcilePolicy`（PROCESSING/WAITING 扫描→查询补单→收敛；查询次数耗尽转人工/差错）。
+- 端点：`GET /api/channel/trades/{bizNo}`、`POST /api/channel/receipt`、`POST /api/payments/{id}/reconverge`。
+- **资金护航**：WAITING 期间分录数 0、未过账、订单仍 PAYING；终态只翻一次；重复/中间态/金额不符回执一律吸收不动账。
+- 实测：同步 `verify-reconverge.py` **26/26**；异步 + 混沌 **55 过/1 败/1 跳过**（该败为脚本现金户符号写反，已改为按本单分录核算现金腿 `-2000`，待复跑）。
+
+### 19.5 通知签名（S-3 / N-1）
+
+`NotifySigner`：HMAC-SHA256 over `body + "\n" + timestamp + "\n" + nonce`，密钥取商户 appSecret（`getByAppId` 内部链路）；有 RSA2 证书走 SHA256withRSA，缺失降级 HMAC。头 `X-Payment-Signature`/`X-Payment-Timestamp`/`X-Payment-Nonce`/`X-Sign-Type`（**additive**）。签名失败→PENDING + 告警标记 SIGN，不静默丢弃。https 推送信任 `config/payment-pro-cert.pem`，**http 回调继续支持**。实测 `verify-notify-sign.py` **20/20**。
+
+### 19.6 控制台认证 / RBAC / 审计 / 密钥（S-2 / G-1 / M-1 / S-1）
+
+- **认证**：Spring Security `SecurityConfig` + `BearerSessionFilter`，STATELESS；`SessionStore`（docker Redis / local 内存降级）。`POST /api/auth/login|logout|refresh`、`GET /api/auth/me`。初始 admin 由 `ConsoleAuthService.seed()` **幂等仅缺失时插入**，口令取 `PP_ADMIN_PASSWORD`（默认 `admin123`），BCrypt 落库。**改环境变量不会更新既有 admin 口令**。
+- **开放面 permitAll**：`/openapi/**`（HMAC 独立链）、`/api/health`、`/actuator/**`、静态控制台。`/api/**` 未登录 **401 A0401**、越权 **403 A0403**，均写审计。
+- **RBAC**：四内置角色 ADMIN/OPERATOR/AUDITOR/READONLY，ADMIN 持通配 `*`；端点→权限点映射（`dispute:approve`、`payment:refund`、`accounting:reverse`、`member:secret`、`audit:read`、`console:admin`…）。表 `console_user/console_role/console_user_role/role_permission/audit_log` 落 **pp_member**（网关无 datasource，经 `AuthFacade/ConsoleFacade` Dubbo 调用）。
+- **审计**：`AuditFilter`（order -50，Security 链之后）记录 who/method/path/bizNo/结果/IP/traceId；`GET /api/audit` 分页（ADMIN/AUDITOR）。
+- **登录限流**：`LoginRateLimiter` 同用户 5 次错口令→**429 A0429**，锁定期内正确口令也拒。
+- **密钥轮换 M-1**：`member_secret_version`（version/secret_cipher/status ACTIVE·RETIRED/grace_until，UNIQUE(member_id,version)）。验签先 ACTIVE 再宽限期 RETIRED，**轮换不停机**；宽限期后即时拒绝（缓存 TTL 内也生效）。版本列表只返回指纹（SHA-256 前 16hex），**绝不返回明文**；明文仅创建/轮换响应一次性返回。
+- **证书**：`member_cert`（SN/公钥/有效期），`CertService.scheduledScan` 到期扫描→ERROR 告警 + `payment_member_cert_alert_total` / `payment_member_cert_expiring` gauge。
+- **S-1**：`SecretProvider` SPI + `LocalFileSecretProvider`（`~/.config/payment-pro/` 600）+ `VaultSecretProvider`（KV v2，配置缺失自动降级 local）+ KMS 可插拔。**真实 Vault 服务端未部署**，密钥仍在仓库外文件，满足红线。
+- **E-1 脱敏不回退**：`MemberConverter.toDTO` 置 appSecret/certPublicKey 为 null，`toDTOWithSecret` 仅 create/getByAppId 使用。
+- **缓存一致性**：`MerchantCache`（`pp:openapi:app:*` 60s TTL）在**轮换与证书上传成功后均 evict**（修复：uploadCert 原先漏 evict 致 RSA2 误报"证书缺失"）。
+- 实测：`verify-rbac.py` **51/51**、`verify-secret.py` **32/32**。
+
+### 19.7 资金防线（S-7）
+
+- **大额双人复核**：`amount_review`（pp_payment，UNIQUE(biz_type,biz_no) + seq_review），`AmountReviewService` + `ReviewFacade`。阈值默认 **1000000 分（1 万元）**可配；未复核拒绝 **A0428 REVIEW_PENDING**，approve 后才走原 TCC；**同人提交+审批拒绝**；幂等 `(REVIEW, bizType:bizNo)`；重启复核单不丢、未复核分毫不动。
+- **兼容取舍**：复核闸门落在**网关 `/api/**` 拦截器**而非 PaymentService，`/openapi/**` 资金单路径逐字节不变（§19.1 红线）。提现仅存在于 OpenAPI，故实际覆盖大额退款 + 冲正。
+- **二次认证**：`StepUpController`（`POST /api/security/step-up`，口令再验）→ 300s 短时 token（`StepUpTokenStore` Redis/内存），`StepUpAuthInterceptor` 校验 `X-Step-Up-Token`，缺失 **403**。覆盖：复核 approve/reject、备付金 adjust、密钥轮换、大额退款/冲正。**会员/账户状态变更暂未纳入**（待脚本协同后收紧）。
+- **备付金账实核对**：`reserve_check_log` + `reserve_bank_adjust`（pp_accounting）。账面 = SYS_CASH 账务余额；实际 = 账面 + 模拟银行独立事件（`reserveAdjust` 注入，**只影响实际侧，绝不触碰凭证与余额**）。差异→ERROR 告警 + `payment_accounting_reserve_diff_total` + 留痕 + RESERVE 差错单。P1 AC-5 将以真实渠道账单替换模拟口径。
+- 端点：`GET/POST /api/reviews`、`POST /api/reviews/{id}/approve|reject`、`POST /api/accounting/reserve/check`、`GET .../logs`、`POST .../adjust`。
+- 实测：`verify-fund-guard.py` **34/34** + 重启混沌段 **8/8**。
+
+### 19.8 可观测（I-8）
+
+13 域全部暴露 actuator（原 `web-application-type=none` 的 12 域改 servlet，内嵌 Tomcat 仅承载 actuator）。management 端口镜像 Dubbo 2088x → **18081-18092**（registry 18092），网关与业务 HTTP 同端口 8080。`MetricsSupport` + `MetricsAutoConfiguration`（common 自动装配）统一命名 `payment_<domain>_<event>_total`；`PaymentTccMetrics` 暴露 gauge **`payment_app_tcc_dead_backlog`**（DEAD 积压）。`show-details=always`。实测 `PP_PROFILE=docker verify-metrics.py` **96/96**。
+
+### 19.9 验证矩阵与重启门禁
+
+| 脚本 | 覆盖 | 结果 |
+|---|---|---|
+| smoke-test.py | 全链路 79 项 | 79/79 |
+| verify-pro.py | 并发幂等/订单竞态/渠道宕机 TCC 补偿/全停重启持久化 | 22/22 |
+| verify-reverse / suspense | 红冲 / 挂账 | 16 / 28 |
+| verify-notify-sign | 通知签名验签/篡改/降级 | 20/20 |
+| verify-dispute | 差错平台全生命周期 | 73/73 |
+| verify-fund-guard | 复核/备付金/step-up + 重启混沌 | 34 + 8 |
+| verify-rbac / secret | 认证鉴权审计 / 密钥轮换证书 | 51 / 32 |
+| verify-metrics | 13 域指标（docker） | 96/96 |
+| verify-reconverge | 补单收敛（同步 / 异步+混沌） | 26 / 55·1 败已修待复跑 |
+| ride verify-integration | **跨系统兼容门禁** | **24/24** |
+
+**重启门禁（血泪教训，已固化为流程）**：
+1. `stop.sh` 加固：pid 等待/SIGKILL 之后**再清理未被 pid 跟踪的残留实例 + 等待网关端口真正释放**。否则垂死旧进程仍占 8080 应答（Dubbo directory 已销毁）返回 503，而 `run.sh` 就绪探测只看 HTTP 200 → **新栈假就绪**。此根因曾同时造成 verify-pro C 段阻塞与异步段 2 项失败。
+2. **稳定性门禁**：连续 3 次 `/api/health` 13/13 + `POST /api/auth/login` 200 + 带 Bearer 的 `GET /api/members` **与 `GET /api/payments`** 均 200（多 facade 真实往返），才允许跑脚本。
+3. **严禁单域重启**：provider 单独重启后 consumer invoker 可能丢失（`validInvokers:0` 不重连），一律全栈 `./stop.sh && ./run.sh --docker --no-build`。
+4. **脚本自行重启子进程必须继承 `~/.config/payment-pro/docker.env`**（`docker_env()`）：run.sh 会 source，脚本不会；漏继承则 MySQL 空口令 → 进程启动即 `Access denied (using password: NO)` 死亡，表现为下游 `No provider available`。
+5. 脚本取静态页/`/actuator/prometheus` 须用对应 `Accept`（`text/html`/`text/plain`），否则 Spring 内容协商返回 **406** 造成假失败。
+6. ride `/api/health` 返回 **dict**（`{registry,services[]}`），payment 返回 **list**，探测脚本不可混用假设。
+
+### 19.10 已知边界与待办
+
+- wave3 进行中：I-2 Apollo（local 文件降级）、I-3 XXL-Job + ShedLock、I-4 RocketMQ 事务消息 + 多 topic、I-7 Sentinel + nonce 防重放（**nonce 必须可选**，ride 不传）。
+- I-5a/I-5b 分片未做（XL，资金最高风险，P0 末做，对账护航 + 单库可回滚，E-7 幂等键跨片用基因法/独立索引表）。
+- 异步段复跑、local 零依赖 profile 全量复验待补。
+- 真实 Vault/KMS 服务端未部署；真实外部渠道适配属 P1 CH-2。
+- 会员/账户状态变更纳入 step-up 待脚本协同后收紧。
+- **C 端移动收银台尚未实现**：`ui-design/` 原型含 12 屏支付宝风格移动收银台（纯 mock），运行态只有 `/api/cashier/pay` API；页面落地属 P1 C-1/C-2/C-5。
+- 管理控制台已补齐差错/复核/备付金/二次认证/配置中心五页并对齐支付宝蓝 `#1677ff`（静态资源打进 jar，**须重建网关 + 重启才生效**）。
+
+## 20. P1 核心支付能力（v1.9.0，47 卡全验收）
+
+> 十泳道并行落地，每道独立专项脚本 + 主会话集成验收。门禁：smoke **79/79** + verify-pro **22/22**（须在 **ride 静默窗口**跑，见 §20.11）+ ride `verify-integration.py` **24/24** + 六项对账 pass + 试算 D=C 且 Σbalance=0。
+
+### 20.1 渠道与路由（CH-2a/2b/3/4/5）
+
+- **ChannelAdapter SPI**：`pay/refund/query/close/parseReceipt/downloadBill/queryLimit`；四实现——MockBankAdapter（MOCK_BANK + MOCK_BANK_B 双实例）、SandboxBankAdapter、EchoChannelAdapter（出厂 DISABLED，证明可插拔）。**模拟银行永久保留为 local 降级与混沌靶**，默认同步路径文案/错误码/状态机/手续费口径逐字不变。
+- **沙箱边界**：无真实银行凭据、不连外网；SandboxBankController 是本进程内模拟银行账本 `sandbox_order`，ChannelHttpClient 走 loopback 真实 HTTP + HMAC（SecretProvider ref `channel-sandbox_bank`，`env=SANDBOX` 隔离）。接生产同 SPI 换 base-url/密钥/报文即可。
+- **路由**：硬过滤（停用/维护窗/单笔+日限额/失败率熔断/Sentinel/异步 opt-in）→ 加权评分 `成功率×100 − feeBps/100 − 耗时s + weight/100 + 主渠道偏好30`（`channel.route.primary-bonus`）。**切换仅在 `failoverAllowed=true`（确未受理）时沿候选序列；受理后超时一律 PROCESSING 交补单**。结构性护栏：`channel_trade.biz_no` PK 一单一行一渠道；拒绝/超限/无可用渠道均在落行前抛错 → TCC Cancel 空回滚，不产生悬挂单。
+- **对账文件**：CSV（表头+明细+`#TOTAL` 声明汇总）落 `data/bills/<code>/<date>.csv`；幂等 `UNIQUE(code,biz_date)+(bill_id,channel_order_no)`，历史行标 `present=0` **不删行**；汇总不符/解析失败→FAILED+差错单；逐笔比对 `AMOUNT_DIFF/STATUS_DIFF/TYPE_DIFF/LOCAL_MISSING/BILL_MISSING` → `DisputeFacade.create(source=PAYMENT, checkName=CHANNEL_BILL, strategy=MANUAL)`，不自动动账。
+- 实测 `verify-channel.py` **111/0/1 跳过**（G 异步段需 `PAYMENT_CHANNEL_ASYNC=true` 另跑）。
+
+### 20.2 风控（R-1/2/3/4）
+
+- **规则引擎**：QLExpress，DSL 例 `amount > 100000 && txnCount(payerId,86400000) > 10` → REJECT/score；函数 `txnCount/quotaUsed/quotaCount/inList/deviceRisk/ipRisk/hourOfDay/amountDeviation`。经 DynamicConfig `risk-rules` namespace 四键下发（Apollo 推送 + 5s 轮询，**不重启生效**）。
+- **版本与灰度**：四类载荷统一版本快照 `risk_config_snapshot`（CONFIG/CONSOLE/ROLLBACK + operator + note 审计）；灰度 FNV 哈希 %100 + 白名单恒生效；一键回滚取上一版生成 ROLLBACK 新版，**配置未变故轮询不覆盖**。
+- **误配置护栏（红线）**：`QLCompileException`/`QLBizException`(如 1/0)/`QLTimeoutException`(限定 50ms) **一律跳过放行并告警**（<3s 返回），同批正常规则仍拦截、内置单笔限额仍拒；JSON 不可解析→last-known-good。告警落 `risk_alert` + Micrometer。
+- **多维限额**：单笔/日/月 × USER/MERCHANT/CHANNEL/METHOD/CARD(BIN)，组合（如 `USER,METHOD`）独立计数、scopeKey 限定、周期 key=yyyyMMdd 自然重置；**8 线程恰好 3 笔放行不超扣、拒绝不消耗额度**。默认值口径未变：single-limit=10000000、window-millis=10000、window-max=5、fee-bps=60。
+- **名单**：黑/白/灰（用户/商户/卡号/IP/设备），处置可配，变更审计，**白 > 黑 > 灰**。
+- **评分分级**：FREQ25/AMOUNT_DEV20/LIST30/DEVICE25/IP20/TIME10 + 规则分；`<40 PASS / 40-59 CHALLENGE / 60-79 LIMIT(降额1000元,超则拒) / 80-94 REJECT / ≥95 MANUAL_REVIEW` → `DisputeFacade(source=PAYMENT, type=RISK_MANUAL_REVIEW, strategy=MANUAL 不动账)`，人审 approve→RESOLVED / reject→IGNORED，重复裁决 409。
+- 实测 `verify-risk.py` **116/116**。**CHALLENGE 续付**已由 P-6/F 衔接（非 PASS 一律受理前拒绝 → CHALLENGE 验证后续付）。
+
+### 20.3 会员 / 账户 / 进件（M-2/3/4/5、X-2、A-1/2/3）
+
+- **KYC**：沙箱四要素 + SHA-256 哈希脱敏 + 幂等 + 开户闸门可配（默认关）。**分级限额** I/II/III 规则 + DynamicConfig 热覆盖 + 升级需 KYC + `checkLimit`（默认不误拦）。
+- **进件审核流**：提交→通过/驳回/补件→重提，**CAS 防双审** + 留痕 + 执照幂等；权限点 `merchant:review`。
+- **C 端登录（M-5，区别于控制台 S-2）**：口令/短信沙箱、5 次错口令锁 15 分、会话 local 内存 / docker Redis、改密验旧 + 全端失效、冻结拒登。端点 `/api/member/register|sms-code|login|logout|session|password` **permitAll**（会员会话与旧口令校验在 MemberAuthController 内）。
+- **多账户类型（A-1）**：5 类型幂等开户，唯一键迁至 `(member_id, account_type)`，独立核算；`list` BALANCE 恒首、`getByMember` 缺省 BALANCE。
+- **绑卡（A-2）**：四要素/Luhn/BIN 校验、默认卡、解绑顺位、重绑幂等；**卡号仅后四位**。
+- **冻结细分（A-3）**：四原因金额冻结**经账务 TCC Try/Cancel**、解冻须对应原因、**司法双人**、状态 FULL/JUDICIAL 留痕。方向性 `CREDIT_ONLY/DEBIT_ONLY` **未假实现**，待账务闸门接线。
+- **脱敏**：证件/卡/手机/执照 SHA-256 + 掩码，口令 BCrypt，验证码哈希，**明文零落库零日志**。新表 pp_member 7 张、pp_account 4 张 + account 增 5 列。
+- 实测 `verify-member-account.py` **109/109**；`account.open` 幂等懒开户、`account.balance` 裸 long、E-1 list/get 全 null 均有断言。
+
+### 20.4 清结算（ST-1..5）
+
+- **T+N**：日切 + 批次状态机 `PENDING→SETTLING→SETTLED/FAILED`，JobHandler + **逐片 ShedLock**；`cycleDays` 默认 1 可配。
+- **费率**：三层（商户/支付方式/交易类型）+ 阶梯 + 分成，经 `settle-fee` namespace 热更；**默认 feeBps=60、withdrawFeeBps=0**；无规则时 `calc source=DEFAULT`（3000 收 18 分）；热更 100bps 后 DB 规则仍优先(80)，**历史结算单 fee/批次 net 不变**（受理时快照）。
+- **分账（结算侧）**：登记 + 复式记账 + **守恒护栏 Σ分账=结算净额（实测 9940，diff=0）** + 回退；重复消息同 id 不重复动账；新收款方超额拒绝且余额 0。**与 P-3 边界**：本域只「收结果→守恒校验→登记明细→复式记账划转」，**不建 share_order、不定比例**；分账明细**不写入 settle_record**，保 P0 summary 恒等式与 ride 口径。
+- **提现到银行**：状态机 + 沙箱出款（BankPayoutAdapter/SandboxBankPayoutAdapter）+ 失败全额解冻 + 补单；SUCCESS 记 SYS_CASH 贷方（与 `fund.withdraw` 同口径）、同 requestId 不重扣、终态后乱序回执吸收、无 step-up token 403 且不动账。
+- **账单**：日/月账单 + CSV 导出 + **跨片归并**（settle_record 顶层 SUM）。
+- **9 张新表全部单库不分片**（状态机含 UPDATE 而影子写只 INSERT，分片会破坏回滚一致性；`withdraw_order.request_id`、`settle_share_detail(share_id,receiver)` 是全局幂等键）；**settle_record 零 ALTER**，批次归属存 settle_batch_item。
+- 实测 `verify-settle.py` **158/158**。
+
+### 20.5 账务（AC-2..5）
+
+- **科目体系**：资产/负债/共同/损益类，科目号+名称+方向+层级+是否系统户。映射：`SYS_CASH→1001 资产D｜SYS_FEE→6001 收入C｜SYS_FUND→2005 负债C｜SYS_SUSPENSE→2003 负债C｜SYS_PAYOUT→2004 负债C｜SYS_CLEARING→3001 共同D｜SYS_PROFIT→4001 权益C｜客户账户默认 2001`。**映射只写标签列，余额=贷−借、feeBps→SYS_FEE、幂等键全不变**。
+- **日切 + 日终批**：AccountingDayClock/AccountingDayService/DayEndBatchService，JobHandler `accountingDayCut`/`accountingDayEnd` + ShedLock（日切全局锁、日终逐片锁 + 科目取模）；`accounting_batch_run UNIQUE(type,date,shard)` 幂等；**默认不自动跑批**（auto-enabled=false，由 XXL/控制台/ppjob 触发）。第二进程并发 8 次触发 lockSkipped≥1 且只一条日切留痕。**损益结转默认关闭以保护 SYS_FEE 手续费闭环口径**，真实结转（D 收入/C SYS_PROFIT、归零、重跑不产生第二张凭证）在隔离 H2 内存 JVM 验证通过。
+- **账簿/凭证查询**：总账/明细账/科目余额表/凭证联查（bizNo/refId/科目/日期区间），跨片分页与聚合归并正确，**凭证只读（VoucherGuard）**。
+- **账实核对**：ReserveReconService 完善 S-7 雏形，差异分级告警 + 建差错单。
+- 8 张新表全不分片；additive 列 `ledger_entry(+subject_code,biz_date，含 ledger_entry_0..3 物理表)`、`transfer_record(+biz_date)`、`reserve_check_log(+5)`、`reserve_bank_adjust(+channel_code)`。**零 DROP/DELETE/UPDATE 既有行**。
+- 实测 `verify-accounting.py` **255/255**，影子比对 diffTotal=0。
+
+### 20.6 通知 / 网关 / 多实例（N-3/4、G-2/3、I-9）
+
+- **多事件类型**：新增 `SHARE_SUCCESS/SHARE_BACK/SETTLE_BATCH/SIGN_SUCCESS/SIGN_CANCEL/DISPUTE_OPENED`（envelope `{event,bizId,timestamp,payload}` + 模板必填校验）；**PAY_SUCCESS/REFUND_SUCCESS 标 legacy，body=payload 原样**（真实 trade.pay 回调 body 键集恒为 `{paymentId,orderId,amount,status}`，逐字节比对通过）；6 新事件商户 HMAC 验签全通过；`event:bizId` 幂等回调恰好 1 次。
+- **查询/重发**：按商户/事件/状态/时间分页 + 单条/批量重发（幂等不重复推送已送达）+ **需 step-up** + 查询脱敏。
+- **Swagger**：springdoc 2.3.0，`/openapi/**` 与 `/api/**` 分组，文档端点免鉴权且不泄敏感示例值，local 零依赖可访问。
+- **统一错误码**：错误体 `{error,code,traceId}`；既有 `00000/A0400/A0401/A0403/A0404/A0409/A0429/B0001/B0002/B0003/C0001` 码值+文案+HTTP 映射**逐项断言不变**；新增 `A0428(400)/A0405(405)/A0413(413)/B0004(403)/C0002(504)` 仅 additive；**成功仍裸数据**（balance 裸 long、health/members 裸 list）。
+- **多实例无状态（docker 实测）**：gateway-2@8081 会话互认、实例2 登出→实例1 立即 401、5 次错口令第 6 次 429 且实例2 同步 429、`pp:openapi:app:*` Redis EXISTS=1、nonce 跨实例 409、step-up token 跨实例可用；notify-2@18190 六条通知各恰好送达 1 次、shedlock notifyPush 恒单持有者。**临时实例与 pid 文件已清理**。local 为单实例语义（H2 文件库独占），Redis 故障时会话/限流/灰度降级本进程内存并告警。
+- **灰度**：header 强制 / weight100 全量 / `crc32(token)%100` 分桶一致 / 共享 Redis 状态 / 一键回滚即时生效且 gray header 失效 / 目标宕机 **fail-open 200**。
+- 实测 `verify-notify-gw.py` **149/149**。
+
+### 20.7 交易产品（T-1..4）
+
+多交易产品路由（即时到账/担保/预授权，默认产品行为不变）；**担保交易**买家付款→平台担保户→确认收货→打款卖家，超时自动确认经 JobHandler+ShedLock，每步复式记账+幂等+试算平衡；**预授权**冻结→完成/撤销→解冻，复用 account A-3 冻结能力，完成金额可小于冻结额（差额解冻）；**超时关闭**未支付订单经 JobHandler+ShedLock 不重不漏，**关闭须释放订单占用且防悬挂**（在途支付单不被误关，关闭与受理竞态有 CAS/状态守卫）。实测 `verify-trade.py` **131/131**。
+
+### 20.8 对账（RC-2..5）与覆盖口径审计
+
+- 日切批量对账（按**账面会计日**取数，共享栈会计日因多次手动日切已推进至 2026-11-26）、渠道内外逐笔比对、对账/差错时效报表 + CSV、分片调度不重不漏（并集=全量、交集=空，全局聚合项只由分片 0 核对）。
+- **检查项数保持 6**：`verify-sharding/verify-job/verify-sharding-fund/verify-mq` 四脚本硬断言 `len(checks)==6`，故新覆盖**折进既有项而非新增**。
+- **本轮补的两类盲区（原只遍历 SUCCESS 单）**：① 「支付-账务一致」增 **FAILED 单却有账务凭证**（已动账未冲正）；② 「支付-交易一致」增 **订单 PAID/PARTIAL_REFUNDED/REFUNDED 且 payment_id 指向 FAILED 单**。两类违规**建差错单(strategy=MANUAL) + ERROR 日志 + 指标 `recon_semantic_violation`，但不翻聚合 pass**——历史脏单修正方向属资金判定须人工/用户拍板，不能由对账自动动账。
+- **COMBO 逐腿归集**：组合支付账务凭证按腿落账（`bizNo=legId`），主单无直接凭证；「支付-账务一致」对 COMBO 取 `getPayment(id).getLegs()` 逐腿 `transfer(legId)` 归集借方与主单金额比对，腿凭证缺失仍判单边账；**非 COMBO 判定口径逐字节不变**。
+- **教训（写入流程）**：**对账全绿 ≠ 资金语义正确**，覆盖口径本身要被审计；断言资金缺陷前必须查全凭证派生形态（组合分腿 / 红冲 RV / 挂账 SUSPENSE），不能只按主单号查。
+- 实测 `verify-recon.py` **83/83**。
+
+### 20.9 支付编排（P-6、P-2..5）
+
+- **支付路由**：按渠道成功率/限额/维护窗/成本择优（调 channel facade），路由失败不产生悬挂单；与 CH-3 边界——复用渠道路由，只做支付方式级编排。
+- **组合支付 COMBO**：多腿独立 TCC 分支 + **整体原子**（任一腿失败全回滚）+ Σ腿=订单额；**按腿落账 bizNo=legId**。实证 P1256：PL5 BALANCE 6000（A863 D 6000 / A862 C 5964 / SYS_FEE C 36）+ PL6 CARD 4000（SYS_CASH D 4000 / A862 C 3976 / SYS_FEE C 24），**Σ腿借方 10000 = 主单金额，腿手续费 36+24=60 = 主单 fee**。
+- **分账编排**：比例/固定额计算 + share_order + PP_SHARE 投递重试，调 settle `SettleShareService` 登记动账；Σ分账=净额误差 0、失败可回退幂等。
+- **退款异步化**：受理→异步执行→终态回执/补单收敛；**outbox 仍唯一事实来源 + 3s 轮询兜底未删**；**`account.transfer/post` 同步语义逐字节不变**（ride 退款走 transfer 不走 trade.refund）；部分/多次退款与 refunded_amount/refunded_fee 口径不变。
+- **关闭/撤销**：撤销当日未清算可撤、已清算走退款；**关闭/撤销与受理竞态 CAS 守卫防悬挂**。实证 P1455 经 P-5 关闭→CLOSED（failReason=支付关闭(P-5)）、订单 O2779→CREATED 且 paymentId=null，状态一致。
+- 计费改接 settle `FeeCalculator`（默认 60bps 一致 + 受理快照不变）；风控 CHALLENGE 续付与收银台 C-3 衔接。
+- 实测 `verify-payment-orchestration.py` **107/107**。
+
+### 20.10 收银台与 C 端 H5（C-1/2/3）
+
+- **多支付方式渲染**：`GET /api/cashier/methods` 按订单/商户/用户动态渲染 + 可用性/限额/维护窗提示，金额分→元。
+- **付款码/扫码（沙箱）**：`USER_PRESENTED`（用户出示）/`MERCHANT_PRESENTED`（用户扫商户），生成→校验→一次性核销→自然过期 EXPIRED（默认 60s）→过期核销 409→防重放；不接真实微信/支付宝。
+- **支付验证**：PASSWORD/SMS/BIO/SMALL_AMOUNT_FREE，连续错口令→LOCKED（锁定期正确口令也拦），`pay-verified` 与受理幂等衔接，验证失败不受理。
+- **C 端 H5 落地（把 ui-design 纯 mock 原型变成真实页面）**：8 页 `/h5/{login,cashier,verify,paycode,scan,result,bill,wallet}.html` + 共享 `app.js/app.css/design-system.css`（**29.4KB 设计令牌原样复用，主色 #1677FF**）。零构建链、零外部 CDN；`api()` 封装**相对路径 `/api/*` + Bearer + `cache:"no-store"`**，401 清 token 跳登录带 `next` 回跳；**file:// 协议守卫在 app.js 第 8 行统一覆盖 8 页**（提示正确入口 `http://127.0.0.1:8080/h5/login.html`）。JS 语法经 Electron 内置 node `--check` 通过（本机 PATH 无 node）。
+- 实测 `verify-cashier.py` **106/106**。**测试隔离要点**：红线段须用独立付款人/商户（复用同一账户付近百笔会触风控滑动窗口，风控在 TCC Try 内拒绝→FAILED，污染断言）；脚本对受理前 400 B0001 限频做**等窗口重置后重试**，不放宽阈值。
+
+### 20.11 P1 验证矩阵与新增流程护栏
+
+| 专项 | 结果 | 专项 | 结果 |
+|---|---|---|---|
+| verify-channel | 111/0/1跳过 | verify-accounting | 255/255 |
+| verify-risk | 116/116 | verify-notify-gw | 149/149 |
+| verify-member-account | 109/109 | verify-trade | 131/131 |
+| verify-settle | 158/158 | verify-recon | 83/83 |
+| verify-payment-orchestration | 107/107 | verify-cashier | 106/106 |
+
+**新增/固化的流程护栏（血泪教训）**：
+1. **ride 静默窗口**：pp 的 smoke/verify-pro 等含**全局增量断言**（结算笔数、商户余额增量、SYS_ 户余额）的套件，须在 ride-pro 停止时跑；否则 ride 并发镜像资金流污染断言（实测 ride 在线时 smoke 77/79，静默窗口 79/79）。顺序：停 ride → 跑 pp 套件 → 启 ride → 跑 ride 24/24 门禁。
+2. **域间边预热**：稳定性门禁除 gateway 多 facade 往返外，还须预热 `account→member/accounting`（Dubbo 懒重连 `invokersToReconnect:1` 约 30s 自愈），否则重启后立刻跑脚本撞 `validInvokers:0` 假故障（POST /api/accounts 500 B0002）。
+3. **分片表自动 additive 补列**：`ShardTableBootstrap.alignColumns` 启动时双向补列（只 ALTER ADD，统一可空 + 沿用源默认值，跳过自增列）。根治「业务域加列只改主表 → 分片表缺列 → 复制行报 Unknown column → dataSource 建不起来 → 域启动失败」（实测一次补齐 payment 16 列 / refund_record 20 列）。
+4. **禁改他域 facade 接口**：只调既有方法；新增接口方法会致该域 impl 未实现而**全 reactor 编译失败**（本轮踩多次）。跨域新能力由主会话接线。
+5. **锁协议**：同一锁名 `run/.wave3-lock`，构建/重启/验证/编辑共享文件必须持锁；**不得在他方持锁期间重启全栈或切换分片态**（曾致在途 TCC 被打断、smoke/recon 假失败）。代理轮次耗尽后锁成孤儿，主会话核产物后接管。
+6. **代理 150 轮上限是常态**：窄范围派单（1-2 卡/泳道）、验证只跑本卡专项 + smoke，全套回归留主会话集成期；耗尽后**核产物完整性再 takeover**，不盲目重派。
+7. **口令不进 argv**：诊断脚本用 defaults-extra-file 或 stdin 传 SQL，避免超时 traceback 把 MYSQL_PWD 回显进日志。
+
+### 19.11 已拍板决策与生产部署必改项（2026-11-20 用户批准）
+
+| # | 事项 | 决策 | 理由 / 处置 |
+|---|---|---|---|
+| ① | 历史脏单 **P360**（dtx=CONFIRMED、账务三腿齐全、订单 O303=PAID，但支付单 FAILED） | **依权威 dtx 修正为 SUCCESS**（不红冲退款） | 三者一致指向"支付其实成功"；红冲会造成资金退回但订单仍 PAID 的新不一致。**须经新增受控修复端点**（payment 域 additive：前置校验 dtx=CONFIRMED + 分录齐全 + 只允许 FAILED→SUCCESS，强制 step-up + 大额双人复核 + 审计），**不得直接 UPDATE 库**。根因（TCC confirm/cancel 竞态）已用互斥 CAS 修死 |
+| ② | **I-5b 资金域分片切流** | **保持单库观察态，不切流** | 双写开、mirrorFailures=0、initial-active=false；afterCommit 双写存在失败窗口，虽有启动同步/resync/比对三重护航，观察期后再切更稳。切流与回滚各只需一条 `POST /actuator/ppshard {"action":"toggle","enabled":true/false}` |
+| ③ | **损益结转** | **保持默认关闭** | 结转会归零 SYS_FEE 转入 SYS_PROFIT，破坏「SYS_FEE 余额 vs 结算净手续费」闭环口径（smoke/对账多处断言依赖）。真实结转已在隔离 H2 JVM 验证正确（D 收入/C SYS_PROFIT、归零、重跑不产生第二张凭证），生产需要时经配置开启并**按币种分组** |
+| ④ | **会计日已推进至 2026-11-26**（真实日期 11-20） | **不回正，保留并记录** | 它是多次手动日切的真实结果，accounting_day/批次/日切留痕均按该日期生成且幂等键含 date；回正指针会造成会计日与既有留痕/批次归属不一致。**后续一律按账面会计日取数**，生产部署从新库起算 |
+| ⑤ | **ride appM1 计费/配额** | **保持 legacy 免费、不限流、不限配额** | ride 是内部双账本镜像方而非外部商户，计费会引入无意义配额风险。未注册 appId 走 legacy 已是现状 |
+| ⑥ | **cashier 沙箱开关** | **运行默认保持可用（联调需要）；生产部署必须置 `gateway.cashier-sandbox-enabled=false`** | 置 false 后 smsCode 不再返明文，ride `verify-cashier-ride` 56 项与 SDK 沙箱示例依赖它，故不改运行默认。**⚠ 生产必改项** |
+| ⑦ | **CURTEST0d65f2be 残留测试户 100 万分** | **已清理（走 AC-1 红冲 + 双人复核 + 审计）** | 换汇三笔已被泳道正确红冲（USD 户归 0），唯一残留是最初充值 `CURTEST0d65f2beTP`。执行：首次红冲→400 A0428 建复核单 AR26→第二审批人(OPERATOR)批准(submitter=admin/approver=cleanupbob*)→红冲成功 **RV7883**(SYS_CASH C 1000000 / A1179 D 1000000)→**A1179 余额 0**、对账 pass、D=C=1214145380。原凭证保留，未直接改库 |
+| ⑧ | **提交推送** | **在「全量构建绿 + P2 全验收 + 终版文档刷新」检查点提交并推送** | 不在半成品状态提交（曾有泳道在途编译错误）；payment-pro 与 ride-pro 各自只 stage 本会话文件，勿卷入并行会话改动 |
+
+**生产部署必改项清单（上线前逐条核对）**：
+1. `gateway.cashier-sandbox-enabled=false`（短信码不再返明文）
+2. `PP_ADMIN_PASSWORD` 设为强口令（**注意种子幂等仅缺失时插入，改环境变量不会更新既有 admin 口令**，须走改密流程或新建管理员）
+3. `payment.sharding.enabled` 按观察期结论决定；切流前跑全量对账 + 影子比对 diff=0
+4. 损益结转如需开启，先按币种分组并核对 SYS_FEE 闭环口径断言
+5. 会计日从新库起算（勿沿用测试推进的 2026-11-26）
+6. Apollo/Vault/KMS 接真实服务端（当前 Vault 客户端已实现但服务端未部署，密钥在 `~/.config/payment-pro/` 600）
+7. 渠道适配器换真实 base-url/密钥/报文（当前 MockBank/Sandbox 均无真实银行凭据、不连外网）
+8. XXL-Job accessToken 与各执行器端口（9994-9998 已用满）核对；claim-pro 侧 token 需自行对齐
+9. Sentinel 规则按真实容量调阈值（当前保守默认，拒绝在受理前）
+10. `PP_MARKETING_ENABLED` 按需开启（关闭时营销抵扣编排完全短路、零 RPC、fee 不变）
+
+## 21. P2 增值生态（v2.0.0，17/19 验收）
+
+### 21.1 交易增值（T 系列）
+| 卡 | 能力 | 关键设计 |
+|---|---|---|
+| T-1 | 担保确认 | `escrow_confirm_log`（order_id UNIQUE 全局幂等）、系统担保户登记 `trade_system_account`（name PK 即跨实例占位闸门） |
+| T-2 | 预授权 | `preauth_record`（order_id UNIQUE）+ `preauth_complete_log`（request_id/biz_no UNIQUE）；冻结→完成扣款/撤销 |
+| T-3 | 交易产品 | 产品目录 + 状态机，参数由 DynamicConfig（Apollo）热覆盖；`product_type` 存量由 DB 默认值回填 INSTANT |
+| T-4 | 超时关闭 | `order_expire_log`（order_id UNIQUE ⇒ 不重不漏审计）、重开留痕 |
+| T-5 | **合并支付 + 分阶段** | 见 §21.2 |
+| T-6 | **撤销 vs 退款 + 改价** | 见 §21.3 |
+
+### 21.2 T-5 合并支付与分阶段
+**表**（全部单库不分片）：`merge_order`（request_id UNIQUE）、`merge_order_rel`（PK merge_id+order_id）、`order_stage_plan`（PK order_id+stage_seq）、`stage_pay_log`。
+
+**合并支付**：承载单（carrier）+ 各子订单独立 `MERGE_PAY` TCC 分支 → 一子订单 Try 失败即整体回滚。
+守恒：`Σ子订单额 = 合并额`（误差 0）、fee 按子订单分摊守恒、`Σ腿 = 合并额 = Σ子订单额`（COMBO 叠加时两层守恒）。
+状态：`CREATED → PAYING → PAID`；失败出口一律重开回 CREATED（见 §21.10 缺陷 4/7/8）。
+
+**分阶段**：`stage_count` / `paid_stage` / `paid_amount` / `stageAmounts`。
+顺序期 CAS：`reserveStage(orderId, paymentId, expectPaidStage=seq-1)` 必须恰 1 行。
+守恒：`Σ期额 = 订单额`、`paid_amount` 累加守恒、期撤销回退 `paidStage/paidAmount`。
+
+**`stage_pay_log` 唯一键设计（v2.0 更正）**：
+- `uk_stage_payment(payment_id)`、`uk_stage_request(request_id)` 保留
+- 原 `uk_stage_order_seq(order_id, stage_seq)` **降为普通索引** `idx_stage_order_seq`
+- 原因：期级唯一键挡住「当日撤销后重付同一期」的合法 INSERT；而每次 attempt 必须**独立留痕行**（`releaseStageAfterCancel` 按旧 paymentId 幂等重入，原设计注释明写「后续期重付不影响本留痕终态」）
+- 双付守卫不削弱：订单级 `reserveStage` CAS + `uk_stage_payment` + `uk_stage_request` 三重
+- 迁移：`TradeSchemaUpgrade.relaxStageOrderSeqIndex`，幂等、双 profile 同构、**只动索引零行改**；三处 schema 同步（`schema.sql` / `schema-mysql.sql` / `TradeSchemaUpgrade`）
+
+### 21.3 T-6 撤销 vs 退款边界与改价
+**判定边界**：
+| 条件 | 走 | 凭证 |
+|---|---|---|
+| 当日未清算 + 全额未退 + BALANCE | **撤销** | `CX:paymentId` 全额反向，**无退款单**，`closeType=CANCEL` |
+| 已清算 / 已部分退 / CARD | **退款** | 退款单 + 异步收敛 |
+| 大额撤销 | 先双人复核 | `A0428 + reviewId`，绝不动账 |
+| 非最新已付期 | 拒绝 | 409 |
+
+**改价**：
+- 未支付：`changePriceCas` 仅 `CREATED` 且无预留/无合并/无阶段计划；`original_amount` **首次留痕**、`price_change_count` 累加；不破坏 `merchant+outTradeNo` 幂等（同键返回原单新额）；fee 按新额快照
+- 已支付：拒绝直接改价，引导**差额补退**（下调退差额 / 上调补收），`order_price_log` 留痕（request_id UNIQUE）
+- **MySQL 陷阱**：`UPDATE` 赋值从左到右求值，必须 `SET original_amount=COALESCE(original_amount, amount), amount=#{newAmount}`，顺序颠倒会让留痕取到新价
+
+### 21.4 资金增值（ST-6 保证金/垫资）
+保证金缴存/释放/扣划 + 垫资垫付/追偿，**全部经既有 `accountingFacade.post`**（bizNo `DP:/DR:/DD:/AD:/AR:` 确定性派生 + IdempotentTemplate），**未自建账本**。
+守恒：`balance(SYS_DEPOSIT) = Σ缴存−Σ释放−Σ扣划`；`used = Σ垫资−Σ追偿 = −balance(SYS_ADVANCE)`，diff 恒 0。
+额度并发 5×1000 剩余 2000 → **恰 2 笔成功**。
+`deposit_record`/`credit_account`/`advance_record` 三表 request_id 全局 UK，单库不分片，`settle_record` 零 ALTER。
+SYS_DEPOSIT 复用既有 2006 科目；SYS_ADVANCE 暂落 2999 待映射（申请新增 1002 垫资应收款）。
+
+### 21.5 开放平台增值（G 系列）
+应用与授权（appId/scope/配额/计费，appSecret 仅注册响应返回一次）、沙箱（网关截流，只走 `openapi_sandbox_*` 账本，**生产资金一行不动**，生产必关）、配额与计费（计费账本独立于资金账本，超限受理前拒绝 A0429 不落单）、版本与 SDK（v1 冻结面逐字节不变 + 双 SDK 防漂移）、API 文档（springdoc 免鉴权生成期脱敏 + 仓库契约原文）。
+`appM1` 免费不限为已拍板联调口径。
+
+### 21.6 签约代扣（CH-4）
+`channel.sign` / `channel.agent.pay`；在途单回填支付单号/说明（异步受理或状态未知时留痕，交补单收敛，**绝不臆断失败**）。
+待拍板：`channel.sign` 的 merchantId 绑定校验（建议加）。
+
+### 21.7 分片与影子双跑（I-5a/I-5b）
+见 ARCHITECTURE §4.2/§4.3。`verify-sharding 123`、`verify-sharding-fund 253`；679 存量单快照逐条一致；`ppshard` toggle 双向回滚逐条一致（含序），差异非 0 拒绝切换；`shard_route_state` 持久化防重启方向反转。**当前保持单库观察态**，切流待拍板。
+
+### 21.8 管理台（U 系列，v2.0 重点）
+**12 业务分组两级导航**（`PP_IA`，69 个二级项），hash 路由、权限隐藏、rail 折叠态存 `localStorage(pp.console.nav)`。
+**22 个原待建页全部建成真实页面**：trade-products / cashier-ops / combo-pay / kyc / onboarding / contract / bindcard / member-tier / member-auth / notify-resend / notify-tpl / open-apps / open-sandbox / open-quota / open-version / open-docs / canary / errcode / sentinel / jobs / shadow-diff / observability。
+每页：真实数据列表 + 筛选 + 分页 + 详情抽屉 + 空/加载/错误态；单据与凭证/流水关联跳转；敏感写操作走 `guardedApi`（二次认证）。
+**浏览器逐页实测 22/22 通过**（最多一页 14 表 124 行），零占位文案。
+
+**实现要点（踩坑固化）**：
+- 内容区是 `section#tab-<tab>`，**不是** `[data-tab]`（后者是导航项）
+- `PPNav.route(false)` **只定位不取数**，取数由 refresh/点刷新触发
+- 模块必须显式 `window.PPXxx = PPXxx`，否则 `if(window.PPXxx)` 恒 false、init 不执行 → **shim 单测全绿但真实页面白屏**
+- `PPNav.ensureSections` 会给 index.html 缺失的 section 自动建**警告占位容器**，loader 自行覆写；故 13 个页面无需 index.html 预置 section
+- 平台 `X-Frame-Options: DENY`，隐藏 iframe 验证路线不可用
+- 表格空的排查顺序：会话过期(401) → 未点刷新 → 表头+空态行 → 慢端点（`/api/errors` 实测 10s）
+
+**两处 404 属真实语义非故障**：
+- `payment.gateway.sentinel_block`：指标名正确，计数器**首次拒绝后才注册**，未发生拒绝时 404 属预期（前端走 Prometheus 兜底）
+- `/api/platform/jobs?service=member`：`JobAutoConfiguration` 是 `@ConditionalOnBean(JobHandler.class)`，member 域只有裸 `@Scheduled`（证书到期扫描）无 JobHandler → 整个 job 装配含 `/actuator/ppjob` 被跳过。前端已改为如实说明「该域未装配 JobHandler，合法状态非故障」
+
+### 21.9 其余 P2 卡
+多币种（`verify-multicurrency 134`）、营销抵扣编排（`verify-marketing-orch 323+30`）、账户生命周期（196）、多客户端（148）、灰度（状态写共享 Redis 全网关即时生效，不可达 fail-open 回稳定实例；**因数据保护未真启，页面如实展示未启用**）、可观测中心、调度作业、限流熔断、错误码表、分片影子比对。
+
+### 21.10 收口挖出的 8 个真缺陷（**代码早已落盘、验证脚本从未跑过**）
+> 教训：**源码写完 ≠ 验收完**。T-5/T-6 台账长期挂 ⬜ 是正确的；一跑从未跑过的 `verify-trade-plus.py`（10 段）即暴露 8 个真缺陷，其中 4 个属资金守恒/悬挂类。
+
+| # | 缺陷 | 根因 | 修法 | 文件 |
+|---|---|---|---|---|
+| 1 | MERGE_COMBO 退款后**腿级 refundedAmount 恒 0**（主单与子订单分摊都对） | **口径不对称**：受理侧用 `isComboMode()`（含 MERGE_COMBO），完结侧硬编码 `"COMBO".equals()` → 叠加单整段腿级下推被跳过 | 完结侧改用 `isComboMode()` | `PaymentCompletionListener:114` |
+| 2 | 分阶段**撤销后无法重付**（`Duplicate entry 'O-2' for uk_stage_order_seq`） | 期级唯一键挡住合法 INSERT | 降为普通索引 `idx_stage_order_seq`（三重双付守卫仍在）+ 幂等迁移 | `StagePayMapper` / `TradeSchemaUpgrade` / 三处 schema |
+| 3 | 改价 **originalAmount 留痕被覆盖**为新价 | **MySQL UPDATE 赋值从左到右**，`amount` 先改导致 COALESCE 取新值 | 调换赋值顺序 | `OrderMapper.changePriceCas` |
+| 4 | 合并**受理前失败悬挂 PAYING**（风控降级 503） | 守卫 `try` 从 `coordinator.begin` 才开始，风控检查在 try **之外** | try 边界前移覆盖「置 PAYING 之后、TCC 之前」整段；xid==null 统一清理 | `MergePayOrchestrator` |
+| 5 | 监控每轮**逐条远程查对端自撞 429** | 76+ 次无间隔 `trade.query` 撞 Sentinel 热点 50 QPS/appId | feeCache + 每轮 20 条 + 60ms 间隔 + `feesComplete` 门禁 | ride `PaymentMonitor` |
+| 6 | 清算跑批**误判 C0001/503** | provider 实测跑完 **10.9s** > Dubbo 默认 **8s** | **方法级** `@Method(name="runSettleBatch", timeout=120000)`，其余不放宽 | `SettleOpsController` |
+| 7 | **TCC 回滚后合并单永久 PAYING** | `reopenMerge` 全仓仅 3 调用点全在 orchestrator，`onCancelled` **根本没有**；line 65 注释声称有实现却无 | `onCancelled` 按 afterCommit 模式补重开（CAS 幂等，失败由 PAYING 续驱兜底） | `PaymentCompletionListener` |
+| 8 | 缺陷 7 修后竞态仍悬挂 | `reopenMerge` 要求**全部子订单必须 CREATED**，而竞态中一子订单**已到期 CLOSED** → 永远抛「子订单未释放」 | 「已释放」判定接受 **CLOSED 终态**（资金从未预留或已随回滚释放） | `MergePayService.reopenMerge` |
+
+**第一版修法引入回归的教训（缺陷 2）**：最初用「CAS 复用 CANCELLED 留痕行」让重付通过，却破坏了 `releaseStageAfterCancel` 按旧 paymentId 的幂等重入（404 阶段留痕不存在）。**先读原设计意图再修**——原注释明写每次 attempt 独立留痕行，故正解是放宽唯一键而非复用行。
+
+**验证夹具同步修严（非放宽阈值）**：
+- `wait_payment` 原 `poll` 超时只返回末值不校验 → 会把 FAILED 单当成功传下游，产生误导性失败；改**严格断言终态**
+- 长套件复用同一付款人（a1/a3）撞每 payer 10s/5 笔频率闸，导致**每轮崩在不同段、✓ 数跨轮不可比**；段6/段7/改价竞态各换**独立新付款账户**
+- step-up 令牌 300s TTL 中途过期 → `api()` 补 403 A0403 自动续取
+- 两处**断言本身写错**（非产品缺陷）：零悬挂允许集漏 `REFUNDED/PARTIAL_REFUNDED`（本就是终态）；`routedCount` 是列表 `[{'c':31}]` 却与整数 Σ 比（恒 False，数据实际正确）
+- 收尾清理 `dissolve` 409 属合法拒绝（子订单未释放），改非致命不中断套件
+
+### 21.11 P2 剩余
+- **I-1 ZK 集群化**：计划标注「可选」，**用户批准不做**，列入生产部署必改清单（当前单节点）
+- **I-6 tcc-core 参与者自注册**：待实现。现状 `TccParticipants` 硬编码 3 个 `@DubboReference`（accounting/channel/trade）+ `Map.of`，新增参与者域须改该类；目标按 Dubbo group 从注册中心自动发现
+
+---
 
 ## 附录 A：关键代码索引
 

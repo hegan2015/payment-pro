@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>支付验证 · payment-pro</title>
+<link rel="stylesheet" href="design-system.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="verify">
+<div class="h5-stage">
+  <div class="phone"><div class="notch"></div><div class="phone-screen">
+    <div class="statusbar"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+    <div class="screen-body" style="background:hsl(var(--bg))">
+      <div class="appbar" style="background:hsl(var(--card));color:hsl(var(--ink-1))"><div class="ab-title"><svg id="backBtn" style="color:hsl(var(--ink-2))"><use href="#i-back"/></svg>支付验证<svg style="color:hsl(var(--ink-3))"><use href="#i-more"/></svg></div></div>
+      <div class="banner error" id="verifyErr"></div>
+      <div class="banner info" id="freeBanner"></div>
+      <div class="verify-tabs">
+        <div class="verify-tab active" data-tab="pwd">密码</div>
+        <div class="verify-tab" data-tab="sms">短信</div>
+        <div class="verify-tab" data-tab="bio">指纹</div>
+      </div>
+
+      <!-- 密码键盘 -->
+      <div id="panel-pwd" style="flex:1;display:flex;flex-direction:column">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:hsl(var(--ink-4));font-size:var(--t-sm);gap:8px">
+          <svg style="width:40px;height:40px"><use href="#i-lock"/></svg>请输入支付密码验证身份
+        </div>
+        <div class="pwd-scrim" style="position:absolute">
+          <div class="pwd-sheet">
+            <div class="pwd-head">
+              <button class="close" id="pwdClose"><svg><use href="#i-close"/></svg></button>
+              <div class="pwd-title">请输入支付密码</div>
+              <div class="pwd-amount num"><span class="cur">¥</span><span id="pwdAmount">0.00</span></div>
+              <div class="pwd-method" id="pwdMethod">余额</div>
+            </div>
+            <div class="pwd-dots" id="pwdDots">
+              <div class="pwd-dot"><span class="ball"></span></div><div class="pwd-dot"><span class="ball"></span></div>
+              <div class="pwd-dot"><span class="ball"></span></div><div class="pwd-dot"><span class="ball"></span></div>
+              <div class="pwd-dot"><span class="ball"></span></div><div class="pwd-dot"><span class="ball"></span></div>
+            </div>
+            <div class="pwd-alt"><span id="forgotPwd">忘记密码？</span><span id="bioShortcut" style="display:flex;align-items:center;gap:4px"><svg style="width:14px;height:14px"><use href="#i-fingerprint"/></svg>指纹支付</span></div>
+            <div class="keypad" id="keypad">
+              <button class="key" data-k="1">1</button><button class="key" data-k="2">2</button><button class="key" data-k="3">3</button>
+              <button class="key" data-k="4">4</button><button class="key" data-k="5">5</button><button class="key" data-k="6">6</button>
+              <button class="key" data-k="7">7</button><button class="key" data-k="8">8</button><button class="key" data-k="9">9</button>
+              <button class="key fn" data-k="bio"><svg style="color:hsl(var(--primary))"><use href="#i-fingerprint"/></svg></button>
+              <button class="key" data-k="0">0</button>
+              <button class="key fn" data-k="del"><svg style="color:hsl(var(--ink-2))"><use href="#i-delete"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 短信验证（沙箱） -->
+      <div id="panel-sms" style="display:none;flex:1;flex-direction:column">
+        <div class="pad-4 center muted tiny">沙箱短信验证码：点击获取后码值仅在沙箱返回（生产经短信网关下发，不回显）。</div>
+        <div class="sms-row">
+          <input id="smsInput" type="text" inputmode="numeric" maxlength="6" placeholder="6 位验证码">
+          <button class="sms-send" id="smsSend">获取验证码</button>
+        </div>
+        <div class="banner info" id="smsHint"></div>
+        <div class="pad-4"><button class="btn-primary" id="smsConfirm">验证并支付</button></div>
+      </div>
+
+      <!-- 指纹（沙箱模拟） -->
+      <div id="panel-bio" style="display:none;flex:1;flex-direction:column">
+        <div class="bio-pad">
+          <button class="bio-btn" id="bioBtn"><svg><use href="#i-fingerprint"/></svg></button>
+          <div class="muted tiny center">指纹/面容为端侧令牌模拟校验（local 沙箱，无真实生物硬件）。<br>点击模拟采集令牌并完成验证。</div>
+        </div>
+      </div>
+
+      <!-- 设置支付密码 -->
+      <div id="setPwd" style="display:none;position:absolute;inset:0;background:hsl(220 20% 10% / .45);z-index:40;flex-direction:column;justify-content:flex-end">
+        <div class="pwd-sheet">
+          <div class="pwd-head"><div class="pwd-title">设置支付密码</div><div class="pwd-method">6 位数字 · 沙箱哈希加盐存储</div></div>
+          <div class="pad-4"><div class="field"><input id="newPwd" type="password" inputmode="numeric" maxlength="6" placeholder="请输入 6 位数字支付密码"></div></div>
+          <div class="pad-4"><button class="btn-primary" id="setPwdBtn">确认设置</button><button class="btn-ghost mt-3" id="setPwdCancel">取消</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="home-bar"></div>
+  </div></div>
+</div>
+<script src="app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var ctx = PP.getPayCtx();
+  if (!ctx) { PP.go("cashier.html"); return; }
+  var pwd = "", dots = Array.prototype.slice.call(document.querySelectorAll("#pwdDots .pwd-dot"));
+  var err = document.getElementById("verifyErr");
+  function showErr(m) { err.textContent = m; err.classList.add("show"); }
+  function clearErr() { err.classList.remove("show"); }
+  function renderDots() { dots.forEach(function (d, i) { d.classList.toggle("filled", i < pwd.length); }); }
+  function methodName() { return ctx.method === "CARD" ? "银行卡(" + (ctx.cardNo || "").slice(-4) + ")" : "余额"; }
+
+  document.getElementById("pwdAmount").textContent = PP.fmtPlain(ctx.amount);
+  document.getElementById("pwdMethod").textContent = methodName() + " · " + (ctx.merchantName || "");
+
+  function submitPay(verifyToken) {
+    var body = { orderId: ctx.orderId, method: ctx.method, accountId: ctx.accountId, requestId: ctx.requestId, cardNo: ctx.cardNo };
+    if (verifyToken) body.verifyToken = verifyToken;
+    PP.toast("验证通过 · 受理中…");
+    return PP.api("POST", "/api/cashier/pay-verified", body).then(function (r) {
+      PP.go("result.html", { paymentId: r.payment.id, orderId: ctx.orderId });
+    }).catch(function (e) { showErr(e.message || "受理失败"); pwd = ""; renderDots(); });
+  }
+  function doVerify(type, extra) {
+    clearErr();
+    var body = { accountId: ctx.accountId, orderId: ctx.orderId, amount: ctx.amount, verifyType: type, requestId: ctx.requestId };
+    if (extra) Object.keys(extra).forEach(function (k) { body[k] = extra[k]; });
+    return PP.api("POST", "/api/cashier/verify", body).then(function (v) {
+      if (v.pass) { return submitPay(v.verifyToken); }
+      if (v.challengeType === "NEED_SET_PASSWORD") { openSetPwd(); return; }
+      showErr(v.reason || "验证失败"); pwd = ""; renderDots();
+    }).catch(function (e) { showErr(e.message || "验证失败"); pwd = ""; renderDots(); });
+  }
+
+  /* 小额免密 */
+  PP.api("GET", "/api/cashier/methods?orderId=" + encodeURIComponent(ctx.orderId) + "&accountId=" + encodeURIComponent(ctx.accountId))
+    .then(function (dto) {
+      var free = dto.freeVerifyLimit || 0;
+      if (ctx.amount <= free) {
+        var b = document.getElementById("freeBanner");
+        b.textContent = "本笔 " + PP.fmt(ctx.amount) + " ≤ 免密限额 " + PP.fmt(free) + "，可小额免密支付";
+        b.classList.add("show");
+        b.style.cursor = "pointer";
+        b.onclick = function () { submitPay(null); };
+      }
+    }).catch(function () {});
+
+  /* 键盘 */
+  document.getElementById("keypad").addEventListener("click", function (e) {
+    var key = e.target.closest(".key"); if (!key) return;
+    var k = key.getAttribute("data-k");
+    if (k === "del") { pwd = pwd.slice(0, -1); renderDots(); return; }
+    if (k === "bio") { switchTab("bio"); return; }
+    if (pwd.length >= 6) return;
+    pwd += k; renderDots();
+    if (pwd.length === 6) { setTimeout(function () { doVerify("PASSWORD", { payPassword: pwd }); }, 250); }
+  });
+
+  /* 标签切换 */
+  function switchTab(tab) {
+    document.querySelectorAll(".verify-tab").forEach(function (t) { t.classList.toggle("active", t.getAttribute("data-tab") === tab); });
+    ["pwd", "sms", "bio"].forEach(function (p) {
+      var el = document.getElementById("panel-" + p);
+      el.style.display = p === tab ? "flex" : "none";
+    });
+  }
+  document.querySelectorAll(".verify-tab").forEach(function (t) { t.addEventListener("click", function () { switchTab(t.getAttribute("data-tab")); }); });
+  document.getElementById("bioShortcut").addEventListener("click", function () { switchTab("bio"); });
+
+  /* 短信沙箱 */
+  document.getElementById("smsSend").addEventListener("click", function () {
+    PP.api("POST", "/api/cashier/sms/send", { accountId: ctx.accountId, orderId: ctx.orderId }).then(function (d) {
+      var h = document.getElementById("smsHint");
+      h.textContent = "沙箱验证码：" + d.smsCode + "（仅沙箱回显，生产不下发）";
+      h.classList.add("show");
+      document.getElementById("smsInput").value = d.smsCode;
+    }).catch(function (e) { showErr(e.message || "发送失败"); });
+  });
+  document.getElementById("smsConfirm").addEventListener("click", function () {
+    var code = document.getElementById("smsInput").value.trim();
+    if (code.length !== 6) { showErr("请输入 6 位验证码"); return; }
+    doVerify("SMS", { smsCode: code });
+  });
+
+  /* 指纹模拟 */
+  document.getElementById("bioBtn").addEventListener("click", function () {
+    doVerify("BIO", { bioToken: "sandbox-bio-" + Date.now().toString(36) });
+  });
+
+  /* 设置支付密码 */
+  function openSetPwd() { document.getElementById("setPwd").style.display = "flex"; }
+  document.getElementById("forgotPwd").addEventListener("click", openSetPwd);
+  document.getElementById("setPwdCancel").addEventListener("click", function () { document.getElementById("setPwd").style.display = "none"; });
+  document.getElementById("setPwdBtn").addEventListener("click", function () {
+    var p = document.getElementById("newPwd").value.trim();
+    if (!/^\d{6}$/.test(p)) { showErr("支付密码须为 6 位数字"); return; }
+    PP.api("POST", "/api/cashier/pay-password", { accountId: ctx.accountId, password: p }).then(function () {
+      document.getElementById("setPwd").style.display = "none";
+      PP.toast("支付密码已设置，请重新输入"); pwd = ""; renderDots(); switchTab("pwd");
+    }).catch(function (e) { showErr(e.message || "设置失败"); });
+  });
+
+  document.getElementById("pwdClose").addEventListener("click", function () { PP.go("cashier.html", { orderId: ctx.orderId, accountId: ctx.accountId }); });
+  document.getElementById("backBtn").addEventListener("click", function () { PP.go("cashier.html", { orderId: ctx.orderId, accountId: ctx.accountId }); });
+  renderDots();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+{
+  "_comment": [
+    "R-1 风控规则样例（QLExpress DSL）。下发方式：",
+    "  local : 把 risk.rules.json=<本文件 rules 部分的 JSON 字符串> 写入 ~/.config/payment-pro/config.properties",
+    "  docker: Apollo namespace risk-rules 的 risk.rules.json 键（发布后 ≤5s 生效，不重启）",
+    "也可经控制台 POST /api/risk/rules（需 risk:write + X-Step-Up-Token）逐条编辑。",
+    "globalShadow=true 时只记录命中不拦截（上线前先影子观察误杀率，再灰度，再全量）。",
+    "可用变量: amount(分) payerId merchantId method cardBin deviceId ip scene channelCode hour",
+    "可用函数: txnCount(payer,windowMillis) quotaUsed(key,periodKey) quotaCount(key,periodKey)",
+    "          inList(listType,valueType,value) deviceRisk(deviceId) ipRisk(ip) hourOfDay() amountDeviation()",
+    "护栏: 编译失败/执行异常/超时 → 该规则放行并告警（内置单笔限额+限频仍生效），绝不因规则错误拦截正常交易。"
+  ],
+  "globalShadow": true,
+  "rules": [
+    {
+      "id": "R_BIG_AMOUNT",
+      "name": "大额交易加强验证",
+      "scene": "PAY",
+      "priority": 10,
+      "conditionExpr": "amount > 500000",
+      "action": "CHALLENGE",
+      "score": 20,
+      "grayPercent": 100,
+      "shadow": true,
+      "status": "PUBLISHED",
+      "version": 1
+    },
+    {
+      "id": "R_HIGH_FREQ_BIG",
+      "name": "高频且大额拒绝",
+      "scene": "PAY",
+      "priority": 20,
+      "conditionExpr": "amount > 100000 && txnCount(payerId, 86400000) > 10",
+      "action": "REJECT",
+      "score": 40,
+      "grayPercent": 10,
+      "whitelist": "",
+      "shadow": true,
+      "status": "PUBLISHED",
+      "version": 1
+    },
+    {
+      "id": "R_GRAY_DEVICE_NIGHT",
+      "name": "灰名单设备夜间交易转人工",
+      "scene": "PAY",
+      "priority": 30,
+      "conditionExpr": "inList('GRAY','DEVICE',deviceId) && (hourOfDay() < 6 || hourOfDay() > 23)",
+      "action": "MANUAL_REVIEW",
+      "score": 60,
+      "grayPercent": 100,
+      "shadow": true,
+      "status": "PUBLISHED",
+      "version": 1
+    },
+    {
+      "id": "R_QUOTA_NEAR_LIMIT",
+      "name": "日累计接近限额加强验证",
+      "scene": "PAY",
+      "priority": 40,
+      "conditionExpr": "quotaUsed('Q_USER_DAY', '20261120') > 400000",
+      "action": "CHALLENGE",
+      "score": 15,
+      "grayPercent": 100,
+      "shadow": true,
+      "status": "DRAFT",
+      "version": 1
+    }
+  ],
+  "_quotaSample": [
+    {"id": "Q_USER_DAY", "dimensions": "USER", "period": "DAY", "limitAmount": 5000000},
+    {"id": "Q_USER_METHOD_DAY", "dimensions": "USER,METHOD", "period": "DAY", "limitCount": 50},
+    {"id": "Q_MERCHANT_MONTH", "dimensions": "MERCHANT", "period": "MONTH", "limitAmount": 100000000},
+    {"id": "Q_CHANNEL_DAY", "dimensions": "CHANNEL", "period": "DAY", "limitAmount": 50000000},
+    {"id": "Q_CARD_SINGLE", "dimensions": "CARD", "period": "SINGLE", "limitAmount": 2000000}
+  ],
+  "_listSample": [
+    {"listType": "BLACK", "valueType": "USER", "value": "ACC_FRAUD_001", "action": "REJECT", "reason": "确认欺诈"},
+    {"listType": "WHITE", "valueType": "MERCHANT", "value": "M_VIP_001", "action": "PASS", "reason": "战略商户"},
+    {"listType": "GRAY", "valueType": "DEVICE", "value": "DEV_SUSPECT_001", "action": "CHALLENGE", "reason": "可疑设备"}
+  ],
+  "_thresholdSample": {
+    "PAY": {"challengeScore": 40, "limitScore": 60, "rejectScore": 80, "reviewScore": 95, "limitAmount": 100000}
+  }
+}

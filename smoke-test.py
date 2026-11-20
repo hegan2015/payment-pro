@@ -13,6 +13,26 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = "http://127.0.0.1:8080"
+
+# ---- wave2 S-2 控制台登录：拿到 token 则 /api/** 带 Bearer；登录不可用则保持改造前行为 ----
+import os as _os
+TOKEN = None
+
+def _login():
+    global TOKEN
+    try:
+        _r = urllib.request.Request(BASE + "/api/auth/login",
+                                    data=json.dumps({"username": "admin",
+                                                     "password": _os.environ.get("PP_ADMIN_PASSWORD", "admin123")}).encode(),
+                                    method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(_r, timeout=10) as _resp:
+            TOKEN = json.loads(_resp.read().decode()).get("token")
+    except Exception:
+        TOKEN = None
+
+_login()
+# ---- end wave2 S-2 ----
+
 SUFFIX = uuid.uuid4().hex[:6]
 PASSED = 0
 FAILED = 0
@@ -28,10 +48,12 @@ def check(name, cond, detail=""):
         print(f"  ✗ {name}  {detail}")
 
 
-def req(method, path, body=None, raw=None):
+def _req_impl(method, path, body=None, raw=None):
     data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
     r = urllib.request.Request(BASE + path, data=data, method=method,
                                headers={"Content-Type": "application/json"})
+    if TOKEN and path.startswith("/api/") and path != "/api/auth/login":
+        r.add_header("Authorization", "Bearer " + TOKEN)
     try:
         with urllib.request.urlopen(r, timeout=30) as resp:
             text = resp.read().decode()
@@ -42,6 +64,15 @@ def req(method, path, body=None, raw=None):
             return e.code, json.loads(text)
         except Exception:
             return e.code, {"error": text}
+
+
+def req(method, path, body=None, *args, **kwargs):
+    st, resp = _req_impl(method, path, body, *args, **kwargs)
+    if st == 401 and path.startswith("/api/") and path != "/api/auth/login":
+        _login()  # 会话过期/全栈重启（local 内存会话）时重登一次
+        if TOKEN:
+            st, resp = _req_impl(method, path, body, *args, **kwargs)
+    return st, resp
 
 
 def ok(method, path, body=None):

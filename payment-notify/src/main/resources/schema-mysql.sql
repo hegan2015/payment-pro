@@ -25,8 +25,14 @@ CREATE TABLE IF NOT EXISTS notify_record (
     next_retry_at BIGINT       NOT NULL DEFAULT 0,
     last_error    VARCHAR(256),
     created_at    BIGINT       NOT NULL,
+    app_id        VARCHAR(64),
+    sign_type     VARCHAR(16)  NOT NULL DEFAULT 'HMAC_SHA256',
+    signature     VARCHAR(512),
+    nonce         VARCHAR(64),
+    resend_count  INT          NOT NULL DEFAULT 0,
     INDEX idx_notify_biz (biz_id),
-    INDEX idx_notify_pending (status, next_retry_at)
+    INDEX idx_notify_pending (status, next_retry_at),
+    INDEX idx_notify_app_created (app_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS idempotent_record (
@@ -36,3 +42,10 @@ CREATE TABLE IF NOT EXISTS idempotent_record (
     created_at BIGINT      NOT NULL,
     PRIMARY KEY (biz_type, biz_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- I-3 分布式调度 ShedLock 锁表（BIGINT 毫秒）。docker 现存库由 ShedLockSchemaInitializer 启动时幂等补建。
+CREATE TABLE IF NOT EXISTS shedlock (
+    name       VARCHAR(64)  NOT NULL PRIMARY KEY,
+    lock_until BIGINT       NOT NULL,
+    locked_at  BIGINT       NOT NULL,
+    locked_by  VARCHAR(255) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>收银台 · payment-pro</title>
+<link rel="stylesheet" href="design-system.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="cashier">
+<div class="h5-stage">
+  <div class="phone"><div class="notch"></div><div class="phone-screen">
+    <div class="statusbar"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+    <div class="screen-body">
+      <div class="appbar" style="background:hsl(var(--card));color:hsl(var(--ink-1));border-bottom:1px solid hsl(var(--line))">
+        <div class="ab-title"><svg id="backBtn" style="color:hsl(var(--ink-2))"><use href="#i-back"/></svg>收银台<svg style="color:hsl(var(--ink-3))"><use href="#i-more"/></svg></div>
+      </div>
+      <div class="cashier-head">
+        <div class="cashier-merchant"><svg style="width:14px;height:14px;color:hsl(var(--success))"><use href="#i-shield"/></svg><span id="merchantName">收款商户</span></div>
+        <div class="cashier-amount num"><span class="cur">¥</span><span id="orderAmount">0.00</span></div>
+        <div class="cashier-order num">订单号 <span id="orderId">—</span></div>
+      </div>
+      <div class="cashier-body">
+        <div class="banner error" id="cashierErr"></div>
+        <div class="cashier-label">选择支付方式（组合支付 P-2 预留）</div>
+        <div id="methodList"></div>
+        <div id="cardNoWrap" style="display:none" class="pad-4">
+          <div class="field"><label for="cardNo">银行卡号（沙箱：尾号 0000 会被拒绝）</label><input id="cardNo" type="text" inputmode="numeric" value="6222020202020202"></div>
+        </div>
+        <div class="cashier-summary">
+          <div class="cs-row"><span>订单金额</span><span class="num" id="sumOrder">¥0.00</span></div>
+          <div class="cs-row discount"><span>优惠抵扣 <span class="tiny muted" id="discountNote"></span></span><span class="num" id="sumDiscount">-¥0.00</span></div>
+          <div class="cs-total"><span>实付金额</span><span class="amt num" id="sumActual">¥0.00</span></div>
+        </div>
+      </div>
+      <div class="cashier-foot">
+        <button class="btn-primary" id="cashierPay">确认支付</button>
+        <div class="agree">支付即代表同意《支付服务协议》· 资金由服务端 TCC 保障 · 验证失败不受理</div>
+      </div>
+    </div>
+    <div class="home-bar"></div>
+  </div></div>
+</div>
+<script src="app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var ICONS = { wallet: "i-wallet", bank: "i-bank", "bank-net": "i-bank", code: "i-code", scan: "i-scan", huabei: "i-huabei", redpacket: "i-redpacket", combo: "i-split" };
+  var COLORS = { BALANCE: ["hsl(var(--primary-soft))", "hsl(var(--primary))"], CARD: ["#FDECEC", "#E60012"], PAY_CODE: ["hsl(var(--primary-soft))", "hsl(var(--primary))"], SCAN: ["hsl(var(--success-soft))", "hsl(var(--success))"], QUICK_PAY: ["#FDECEC", "#E60012"], NET_BANK: ["hsl(var(--gold)/.18)", "#8a5a00"], CREDIT: ["hsl(var(--primary-soft))", "hsl(var(--primary))"], COUPON: ["hsl(var(--danger-soft))", "hsl(var(--danger))"], COMBO: ["hsl(var(--fill))", "hsl(var(--ink-3))"] };
+  var state = { dto: null, selected: null, orderId: null, accountId: null };
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+
+  function renderMethods(dto) {
+    var list = document.getElementById("methodList");
+    list.innerHTML = "";
+    var firstAvailable = null;
+    dto.methods.forEach(function (m) {
+      var avail = m.available === true;
+      var row = el("div", "pay-method" + (avail ? "" : " disabled"));
+      row.setAttribute("data-method", m.method);
+      var col = COLORS[m.method] || COLORS.BALANCE;
+      var ic = el("span", "icon-circle pm-icon");
+      ic.style.background = col[0]; ic.style.color = col[1];
+      ic.innerHTML = '<svg><use href="#' + (ICONS[m.icon] || "i-wallet") + '"/></svg>';
+      var txt = el("div", "pm-text");
+      var name = el("div", "pm-name");
+      name.appendChild(document.createTextNode(m.name));
+      if (m.category === "RESERVED") { var tg = el("span", "tag tag-reserved", "预留"); name.appendChild(tg); }
+      if (m.method === "PAY_CODE" || m.method === "SCAN") { name.appendChild(el("span", "tag tag-sandbox", "沙箱")); }
+      txt.appendChild(name);
+      if (avail) {
+        var desc = m.hint || "";
+        if (m.method === "BALANCE" && m.accounts && m.accounts.length) { desc = "可用 " + PP.fmt(m.accounts[0].balance); }
+        txt.appendChild(el("div", "pm-desc", desc));
+        if (m.limit) { txt.appendChild(el("div", "pm-limit", "单笔限额 " + PP.fmt(m.limit))); }
+        if (!firstAvailable) firstAvailable = m.method;
+      } else {
+        txt.appendChild(el("div", "pm-reason", m.unavailableReason || "暂不可用"));
+      }
+      var radio = el("span", "radio"); radio.innerHTML = '<svg><use href="#i-check"/></svg>';
+      row.appendChild(ic); row.appendChild(txt); row.appendChild(radio);
+      row.addEventListener("click", function () {
+        if (!avail) { PP.toast(m.unavailableReason || "该支付方式暂不可用", true); return; }
+        select(m.method);
+      });
+      list.appendChild(row);
+    });
+    if (firstAvailable) select(firstAvailable);
+  }
+
+  function select(method) {
+    state.selected = method;
+    document.querySelectorAll(".pay-method").forEach(function (r) {
+      r.classList.toggle("selected", r.getAttribute("data-method") === method);
+    });
+    document.getElementById("cardNoWrap").style.display = method === "CARD" ? "block" : "none";
+    var actual = state.dto ? state.dto.actualAmount : 0;
+    document.getElementById("cashierPay").textContent = "确认支付 " + PP.fmt(actual);
+  }
+
+  function render(dto) {
+    state.dto = dto;
+    document.getElementById("merchantName").textContent = dto.merchantName || (dto.order && dto.order.merchantName) || "收款商户";
+    document.getElementById("orderAmount").textContent = PP.fmtPlain(dto.order.amount);
+    document.getElementById("orderId").textContent = dto.order.id;
+    document.getElementById("sumOrder").textContent = PP.fmt(dto.order.amount);
+    document.getElementById("sumDiscount").textContent = "-" + PP.fmt(dto.discount || 0);
+    document.getElementById("discountNote").textContent = (dto.discount || 0) === 0 ? "（营销抵扣 P2 预留）" : "";
+    document.getElementById("sumActual").textContent = PP.fmt(dto.actualAmount);
+    renderMethods(dto);
+  }
+
+  function load() {
+    var q = PP.qs();
+    var p;
+    if (q.orderId) {
+      state.orderId = q.orderId;
+      p = q.accountId ? Promise.resolve({ accountId: q.accountId }) : PP.provisionDemo();
+    } else {
+      p = PP.provisionDemo();
+    }
+    p.then(function (demo) {
+      state.accountId = q.accountId || demo.accountId;
+      state.orderId = q.orderId || demo.orderId;
+      return PP.api("GET", "/api/cashier/methods?orderId=" + encodeURIComponent(state.orderId) + "&accountId=" + encodeURIComponent(state.accountId));
+    }).then(render).catch(function (e) {
+      var b = document.getElementById("cashierErr"); b.textContent = e.message || "收银台加载失败"; b.classList.add("show");
+    });
+  }
+
+  document.getElementById("cashierPay").addEventListener("click", function () {
+    if (!state.dto || !state.selected) { PP.toast("请选择支付方式", true); return; }
+    var m = state.selected;
+    if (m === "PAY_CODE") { PP.go("paycode.html", { orderId: state.orderId, accountId: state.accountId }); return; }
+    if (m === "SCAN") { PP.go("scan.html", { orderId: state.orderId, accountId: state.accountId }); return; }
+    var ctx = {
+      orderId: state.orderId, accountId: state.accountId, amount: state.dto.actualAmount,
+      method: m, merchantName: state.dto.merchantName, subject: state.dto.order.subject,
+      requestId: "CSHTEST-H5-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    };
+    if (m === "CARD") { ctx.cardNo = document.getElementById("cardNo").value.trim(); }
+    PP.setPayCtx(ctx);
+    PP.go("verify.html");
+  });
+  document.getElementById("backBtn").addEventListener("click", function () { PP.go("wallet.html"); });
+  load();
+})();
+</script>
+</body>
+</html>

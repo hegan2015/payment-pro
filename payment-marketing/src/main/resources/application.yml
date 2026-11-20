@@ -1,0 +1,77 @@
+# 营销域（P2 X-3a/X-3b）：本域无控制台业务 HTTP，内嵌 Tomcat 承载 actuator（18093，与 Dubbo 20893 错开）
+# + local 形态自检 API（payment.marketing.local-api，docker 显式关闭）。
+server:
+  port: ${MARKETING_HTTP_PORT:18093}
+
+spring:
+  application:
+    name: payment-marketing
+  main:
+    web-application-type: servlet
+  datasource:
+    url: jdbc:h2:file:${DATA_DIR:./data}/marketing;MODE=MySQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+
+payment:
+  # 营销域不分片：全部新表含状态机 UPDATE 与全局幂等唯一键（request_id / (activity_id,payment_id)），
+  # 分片后跨片唯一键无法保证（§0.5 E-7），故 local/docker 均单库单表，取号走 next_value_for('seq_marketing')。
+  sharding:
+    enabled: false
+  # I-3：本域注册 marketingExpire 作业（券/红包/积分过期）。XXL 执行器端口 9993-9999 已用满，
+  # 故双 profile 均不接 XXL，只走本地 @Scheduled + ShedLock（多实例互斥），零新增中间件依赖。
+  job:
+    xxl:
+      enabled: false
+    local:
+      enabled: true
+    shedlock:
+      enabled: true
+  marketing:
+    # local 形态自检 API（/local/marketing/**）：仅 local 打开，供 verify-marketing.py 零依赖验证；
+    # docker 显式 false，生产面只经网关 /api/marketing/**（Bearer + RBAC）。
+    local-api: ${MARKETING_LOCAL_API:true}
+    # 积分兑换率：多少积分抵 1 分（默认 100 积分 = 0.01 元）。I-2 DynamicConfig 键
+    # marketing.points.exchange-rate 可热更覆盖；受理时快照落 points_log，热更不影响在途单。
+    points-exchange-rate: ${MARKETING_POINTS_RATE:100}
+    # 积分默认有效期（天），赚取未指定 expireAt/validDays 时使用。
+    points-valid-days: ${MARKETING_POINTS_VALID_DAYS:365}
+    # 券/红包默认有效期（天）。
+    voucher-valid-days: ${MARKETING_VOUCHER_VALID_DAYS:30}
+    # 过期作业本地兜底周期（毫秒）。
+    expire-fixed-delay-ms: ${MARKETING_EXPIRE_DELAY:60000}
+
+dubbo:
+  application:
+    name: payment-marketing
+    qos-enable: false
+  registry:
+    address: zookeeper://127.0.0.1:${ZK_PORT:2181}
+  protocol:
+    name: dubbo
+    port: ${MARKETING_DUBBO_PORT:20893}
+  provider:
+    timeout: 5000
+    retries: 0
+  consumer:
+    check: false
+    timeout: 5000
+    retries: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,ppjob
+  endpoint:
+    health:
+      show-details: always

@@ -1,0 +1,6 @@
+com.qoder.payment.common.metrics.MetricsAutoConfiguration
+com.qoder.payment.common.secret.SecretProviderAutoConfiguration
+com.qoder.payment.common.config.DynamicConfigAutoConfiguration
+com.qoder.payment.common.sentinel.SentinelAutoConfiguration
+com.qoder.payment.common.job.JobAutoConfiguration
+com.qoder.payment.common.db.ShardingAutoConfiguration

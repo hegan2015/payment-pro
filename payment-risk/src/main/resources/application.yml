@@ -1,8 +1,81 @@
+# I-8 可观测：本域无业务 HTTP，内嵌 Tomcat 仅承载 actuator（1808x 与 Dubbo 2088x 错开）
+server:
+  port: ${RISK_HTTP_PORT:18088}
+
 spring:
   application:
     name: payment-risk
   main:
-    web-application-type: none
+    web-application-type: servlet
+  # R-1~R-4（E-3 前置）：risk 域新增库，local H2 零依赖
+  datasource:
+    url: jdbc:h2:file:${DATA_DIR:./data}/risk;MODE=MySQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+# R-1 规则引擎 / R-2 限额 / R-3 名单 / R-4 评分：默认值一律宽松，
+# 保证正常流量（含 ride-pro 镜像资金流）不被新风控误拦（§0.7 红线）。
+# 所有键经 DynamicConfig 读取（local ~/.config/payment-pro/config.properties / docker Apollo
+# namespace risk-rules），此处仅为文档化默认值，改配置不重启生效。
+payment:
+  risk:
+    engine:
+      enabled: true          # 关掉即完全回退内置保守规则（单笔限额 + 限频）
+      shadow: true           # 全局影子模式默认开：新下发规则只记录命中不拦截
+      timeout-ms: 200        # 单条规则执行超时上限（超时 → 放行并告警）
+      hard-timeout-ms: 400   # 线程级硬超时（引擎自身超时失效时兜底）
+      poll-seconds: 5        # 配置轮询周期（Apollo 推送即时，local 文件 30s reload）
+    quota:
+      enabled: true
+    list:
+      enabled: true
+    score:
+      enabled: true
+    # R-5 设备指纹/IP 画像：采集默认开（deviceId/ip 为空即跳过，ride/smoke 真实支付零开销），
+    # 画像接入既有 DEVICE/IP 因子的评分开关默认 false（新因子默认影子，不加分）。
+    device:
+      enabled: true
+      profile-score-enabled: false
+      multi-account-threshold: 5
+      drift-threshold: 3
+      mask-enabled: true
+      retention-days: 90
+    ip:
+      profile-score-enabled: false
+      multi-account-threshold: 10
+      history-reject-threshold: 3
+      retention-days: 90
+    behavior:
+      enabled: true
+      window-millis: 60000
+      max-count: 20
+      retention-days: 30
+    # R-6 AML：默认只生成可疑报告不阻断（hard-block-enabled=false），
+    # 自动跑批默认关闭（与 recon/settle/accounting 先例一致）。
+    aml:
+      enabled: true
+      hard-block-enabled: false
+      score-enabled: false
+      screening-enabled: true
+      dispute-enabled: true
+      auto-scan-enabled: false
+      scan-interval-ms: 60000
+      large-amount: 5000000
+      day-amount: 5000000
+      split-count: 10
+      structuring-count: 3
+      structuring-ratio: 90
+      fast-window-millis: 600000
+      fast-ratio: 90
+      night-hours: "0,1,2,3,4,5"
+      night-amount: 1000000
+      cross-border-amount: 1000000
+      retention-days: 1825
 
 dubbo:
   application:
@@ -20,3 +93,16 @@ dubbo:
     check: false
     timeout: 5000
     retries: 0
+
+# I-8 可观测：local 零依赖暴露端点，docker 供共享栈 Prometheus scrape
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,ppjob
+  endpoint:
+    health:
+      show-details: always
+  health:
+    redis:
+      enabled: false  # local 无 Redis 依赖；docker profile 重新启用

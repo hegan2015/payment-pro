@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>账单 · payment-pro</title>
+<link rel="stylesheet" href="design-system.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="bill">
+<div class="h5-stage">
+  <div class="phone"><div class="notch"></div><div class="phone-screen">
+    <div class="statusbar"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+    <div class="screen-body">
+      <div class="bill-head">
+        <div class="bill-month"><span style="display:flex;align-items:center;gap:6px"><svg id="backBtn" style="width:18px;height:18px;color:hsl(var(--ink-2))"><use href="#i-back"/></svg><span id="billMonth">账单</span><svg style="width:14px;height:14px;color:hsl(var(--ink-3))"><use href="#i-down"/></svg></span><svg style="width:18px;height:18px;color:hsl(var(--ink-3))"><use href="#i-search"/></svg></div>
+        <div class="bill-summary">
+          <div class="bs-item"><div class="bs-label">支出</div><div class="bs-val num" id="billOut">¥0.00</div></div>
+          <div class="bs-item"><div class="bs-label">收入/退款</div><div class="bs-val num" id="billIn" style="color:hsl(var(--success))">¥0.00</div></div>
+        </div>
+      </div>
+      <div class="bill-list" id="billList">
+        <div class="bill-group-label">加载中…</div>
+      </div>
+    </div>
+    <div class="home-bar"></div>
+  </div></div>
+</div>
+<script src="app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var METHOD_NAME = { BALANCE: "余额", CARD: "银行卡", BANKCARD: "银行卡" };
+  function p(n) { return (n < 10 ? "0" : "") + n; }
+  function fmtTime(ms) { var d = new Date(Number(ms || 0)); return p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+
+  PP.provisionDemo().then(function (demo) {
+    var d = new Date();
+    document.getElementById("billMonth").textContent = d.getFullYear() + "年" + (d.getMonth() + 1) + "月";
+    return Promise.all([PP.api("GET", "/api/payments"), PP.api("GET", "/api/orders")]).then(function (res) {
+      var payments = res[0] || [], orders = res[1] || [];
+      var omap = {}; orders.forEach(function (o) { omap[o.id] = o; });
+      var mine = payments.filter(function (x) { return x.payerAccountId === demo.accountId; })
+        .sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+      var out = 0, inn = 0;
+      var list = document.getElementById("billList"); list.innerHTML = "";
+      list.appendChild(el("div", "bill-group-label", "我的支付（沙箱示例账户）"));
+      if (!mine.length) { list.appendChild(el("div", "bill-group-label", "暂无账单，去收银台付一笔吧")); }
+      mine.forEach(function (x) {
+        var o = omap[x.orderId] || {};
+        if (x.status === "SUCCESS") out += (x.amount || 0);
+        inn += (x.refundedAmount || 0);
+        var item = el("div", "bill-item");
+        var ic = el("span", "bi-icon");
+        var isCard = x.method === "CARD" || x.method === "BANKCARD";
+        ic.style.background = isCard ? "hsl(var(--gold)/.18)" : "hsl(var(--primary-soft))";
+        ic.style.color = isCard ? "#8a5a00" : "hsl(var(--primary))";
+        ic.innerHTML = '<svg><use href="#' + (isCard ? "i-bank" : "i-wallet") + '"/></svg>';
+        var txt = el("div", "bi-text");
+        txt.appendChild(el("div", "bi-name", o.merchantName || o.subject || "支付"));
+        txt.appendChild(el("div", "bi-time num", fmtTime(x.createdAt) + " · " + (METHOD_NAME[x.method] || x.method) + " · " + x.status));
+        var amt = el("div", "bi-amt num", "-" + PP.fmtPlain(x.amount));
+        item.appendChild(ic); item.appendChild(txt); item.appendChild(amt);
+        item.style.cursor = "pointer";
+        item.addEventListener("click", function () { PP.go("result.html", { paymentId: x.id, orderId: x.orderId }); });
+        list.appendChild(item);
+      });
+      document.getElementById("billOut").textContent = PP.fmt(out);
+      document.getElementById("billIn").textContent = PP.fmt(inn);
+    });
+  }).catch(function (e) { PP.toast(e.message || "账单加载失败", true); });
+  document.getElementById("backBtn").addEventListener("click", function () { PP.go("wallet.html"); });
+})();
+</script>
+</body>
+</html>

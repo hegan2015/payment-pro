@@ -81,6 +81,15 @@ for svc in member account accounting trade channel risk cashier payment settle n
   start "$svc" "payment-$svc"
 done
 
+# P2 X-3a/X-3b 营销域（第 14 进程，Dubbo 20893 / actuator 18093）。
+# 刻意不纳入网关 HealthService 的 13 进程清单：既有 ./run.sh 与 ./run.sh --docker 的
+# 13/13 硬断言逐字不变；营销域异常也不阻断全栈就绪。PP_MARKETING_ENABLED=false 可关闭。
+if [ "${PP_MARKETING_ENABLED:-true}" = "true" ]; then
+  start marketing payment-marketing
+else
+  echo "==> 跳过 marketing（PP_MARKETING_ENABLED=false）"
+fi
+
 start gateway payment-gateway
 wait_http "http://127.0.0.1:${GATEWAY_PORT:-8080}/api/health" gateway 90
 

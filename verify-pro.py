@@ -12,6 +12,26 @@ import urllib.request
 import uuid
 
 BASE = "http://127.0.0.1:8080"
+
+# ---- wave2 S-2 控制台登录：拿到 token 则 /api/** 带 Bearer；登录不可用则保持改造前行为 ----
+import os as _os
+TOKEN = None
+
+def _login():
+    global TOKEN
+    try:
+        _r = urllib.request.Request(BASE + "/api/auth/login",
+                                    data=json.dumps({"username": "admin",
+                                                     "password": _os.environ.get("PP_ADMIN_PASSWORD", "admin123")}).encode(),
+                                    method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(_r, timeout=10) as _resp:
+            TOKEN = json.loads(_resp.read().decode()).get("token")
+    except Exception:
+        TOKEN = None
+
+_login()
+# ---- end wave2 S-2 ----
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SUFFIX = uuid.uuid4().hex[:6]
 PROFILE = os.environ.get("PP_PROFILE", "local")
@@ -29,10 +49,12 @@ def check(name, cond, detail=""):
         print(f"  ✗ {name}  {detail}")
 
 
-def req(method, path, body=None):
+def _req_impl(method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(BASE + path, data=data, method=method,
                                headers={"Content-Type": "application/json"})
+    if TOKEN and path.startswith("/api/") and path != "/api/auth/login":
+        r.add_header("Authorization", "Bearer " + TOKEN)
     try:
         with urllib.request.urlopen(r, timeout=30) as resp:
             text = resp.read().decode()
@@ -45,6 +67,15 @@ def req(method, path, body=None):
             return e.code, {"error": text}
     except Exception as e:
         return 0, {"error": str(e)}
+
+
+def req(method, path, body=None, *args, **kwargs):
+    st, resp = _req_impl(method, path, body, *args, **kwargs)
+    if st == 401 and path.startswith("/api/") and path != "/api/auth/login":
+        _login()  # 会话过期/全栈重启（local 内存会话）时重登一次
+        if TOKEN:
+            st, resp = _req_impl(method, path, body, *args, **kwargs)
+    return st, resp
 
 
 def ok(method, path, body=None):
@@ -89,6 +120,26 @@ def stop_svc(name):
     os.kill(pid, signal.SIGKILL)
 
 
+def docker_env():
+    """脚本自行重启子进程时必须继承 docker.env（run.sh 会 source，脚本不会），
+    否则 MySQL 口令为空 → 进程启动即 Access denied 死亡，表现为下游 No provider available。"""
+    env = dict(os.environ)
+    if PROFILE != "docker":
+        return env
+    path = os.path.expanduser("~/.config/payment-pro/docker.env")
+    if os.path.exists(path):
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                if line.startswith("export "):
+                    line = line[7:]
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip().strip('"').strip("'")
+    return env
+
+
 def start_svc(name):
     java = os.environ.get("JAVA_HOME", "/Users/hegan/Library/Java/JavaVirtualMachines/corretto-18.0.2/Contents/Home") + "/bin/java"
     log = open(os.path.join(ROOT, "logs", f"{name}.log"), "ab")
@@ -96,7 +147,7 @@ def start_svc(name):
     if PROFILE == "docker":
         args.append("-Dspring.profiles.active=docker")
     args += ["-jar", os.path.join(ROOT, f"payment-{name}", "target", f"payment-{name}-1.0.0.jar")]
-    p = subprocess.Popen(args, stdout=log, stderr=log, cwd=ROOT, start_new_session=True)
+    p = subprocess.Popen(args, stdout=log, stderr=log, cwd=ROOT, start_new_session=True, env=docker_env())
     with open(os.path.join(ROOT, "run", f"{name}.pid"), "w") as f:
         f.write(str(p.pid))
 

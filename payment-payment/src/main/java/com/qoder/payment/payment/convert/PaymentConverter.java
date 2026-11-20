@@ -16,6 +16,12 @@ public final class PaymentConverter {
         PaymentDTO dto = new PaymentDTO();
         BeanUtils.copyProperties(source, dto);
         dto.setCardNo(maskCard(source.getCardNo()));
+        // P2-E P-7 additive：净实付 = 订单全额 − 营销净抵扣（amount/fee 口径一字不改；无营销时 payAmount==amount）
+        long amount = source.getAmount() == null ? 0L : source.getAmount();
+        long marketing = source.getMarketingAmount() == null ? 0L : source.getMarketingAmount();
+        dto.setMarketingAmount(marketing);
+        dto.setMarketingStatus(source.getMarketingStatus() == null ? "NONE" : source.getMarketingStatus());
+        dto.setPayAmount(amount - marketing);
         return dto;
     }
 

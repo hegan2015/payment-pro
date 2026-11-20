@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "_comment": [
+    "I-7 Sentinel 网关治理规则（部署到 ~/.config/payment-pro/sentinel-rules.json，chmod 600）。",
+    "热更新：网关每 5s 轮询文件 mtime/size；docker 可切 Apollo（payment.sentinel.apollo.enabled=true，namespace sentinel-rules，key rules）。",
+    "文件缺失/损坏 → 默认放行（清空限流）+ 内置保守熔断，不阻断支付。",
+    "flowRules: URL 级总闸（资源=URL 模式，grade 1=QPS，count=每秒请求数，全 appId 合计）。",
+    "paramFlowRules: appId 热点参数限流（资源=openapi:<endpoint>，paramIdx 0=appId，验签通过后计数）。",
+    "degradeRules: Dubbo 消费端接口级熔断（grade 2=异常数：statIntervalMs 内异常≥count 且请求≥minRequestAmount → 熔断 timeWindow 秒，降级 B0003）。",
+    "资金安全：写操作（pay/topup/withdraw/transfer/refund）阈值显著低于读（balance/query）；拒绝发生在受理前，不落 PROCESSING 单。",
+    "阈值口径：ride-pro 镜像为单线程顺序 outbox（<5 QPS），smoke 顺序请求（<3 QPS），正常流量远低于阈值。",
+    "C-5/CH-6 additive：9 个 openapi:cashier.* + channel.sign/channel.agent.pay 热点参数限流（paramIdx 0=appId，验签通过后计数，拒绝在受理前不落悬挂单）。阈值与既有冻结面同口径校准：资金写 scanPay/payVerified=10（对齐 trade.pay=10）、channel.sign/agent.pay=8（对齐 fund.topup=8）、verify=30（非资金写，对齐只读 methods/parse；含验证四型+口令锁定 5 连击突发）、口令/短信=5；只读 methods/parse=30、code.query=50。既有 11 条阈值一字未改；ride-pro 顺序 outbox <5 QPS、smoke <3 QPS 不受影响，未注册 appId 仍 legacy 放行。"
+  ],
+  "flowRules": [
+    {
+      "resource": "/openapi/trade.create",
+      "grade": 1,
+      "count": 100,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/trade.pay",
+      "grade": 1,
+      "count": 50,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/fund.topup",
+      "grade": 1,
+      "count": 30,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/fund.withdraw",
+      "grade": 1,
+      "count": 20,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/account.topup",
+      "grade": 1,
+      "count": 30,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/account.transfer",
+      "grade": 1,
+      "count": 30,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/account.withdraw",
+      "grade": 1,
+      "count": 20,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/trade.refund",
+      "grade": 1,
+      "count": 20,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/account.open",
+      "grade": 1,
+      "count": 50,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/account.balance",
+      "grade": 1,
+      "count": 200,
+      "limitApp": "default"
+    },
+    {
+      "resource": "/openapi/trade.query",
+      "grade": 1,
+      "count": 200,
+      "limitApp": "default"
+    }
+  ],
+  "paramFlowRules": [
+    {
+      "resource": "openapi:trade.create",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 20,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:trade.pay",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 10,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:fund.topup",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 8,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:fund.withdraw",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 5,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:account.topup",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 8,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:account.transfer",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 8,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:account.withdraw",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 5,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:trade.refund",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 5,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:account.open",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 10,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:account.balance",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 50,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:trade.query",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 50,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:cashier.methods",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 30,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:cashier.code.create",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 10,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:cashier.code.parse",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 30,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:cashier.code.query",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 50,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:cashier.scanPay",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 10,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:cashier.verify",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 30,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:cashier.payVerified",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 10,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:cashier.payPassword.set",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 5,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:cashier.sms.send",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 5,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:channel.sign",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 8,
+      "durationInSec": 1
+    },
+    {
+      "resource": "openapi:channel.agent.pay",
+      "paramIdx": 0,
+      "grade": 1,
+      "count": 8,
+      "durationInSec": 1
+    }
+  ],
+  "degradeRules": [
+    {
+      "resource": "com.qoder.payment.facade.accounting.AccountingFacade",
+      "grade": 2,
+      "count": 5,
+      "timeWindow": 10,
+      "minRequestAmount": 5,
+      "statIntervalMs": 10000
+    },
+    {
+      "resource": "com.qoder.payment.facade.payment.PaymentFacade",
+      "grade": 2,
+      "count": 5,
+      "timeWindow": 10,
+      "minRequestAmount": 5,
+      "statIntervalMs": 10000
+    },
+    {
+      "resource": "com.qoder.payment.facade.trade.TradeFacade",
+      "grade": 2,
+      "count": 5,
+      "timeWindow": 10,
+      "minRequestAmount": 5,
+      "statIntervalMs": 10000
+    },
+    {
+      "resource": "com.qoder.payment.facade.member.MemberFacade",
+      "grade": 2,
+      "count": 5,
+      "timeWindow": 10,
+      "minRequestAmount": 5,
+      "statIntervalMs": 10000
+    },
+    {
+      "resource": "com.qoder.payment.facade.account.AccountFacade",
+      "grade": 2,
+      "count": 5,
+      "timeWindow": 10,
+      "minRequestAmount": 5,
+      "statIntervalMs": 10000
+    }
+  ]
+}

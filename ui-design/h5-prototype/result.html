@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>支付结果 · payment-pro</title>
+<link rel="stylesheet" href="design-system.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="result">
+<div class="h5-stage">
+  <div class="phone"><div class="notch"></div><div class="phone-screen">
+    <div class="statusbar"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+    <div class="screen-body">
+      <!-- 处理中 -->
+      <div class="proc-wrap" id="procWrap">
+        <div class="spinner"></div>
+        <div class="result-title">支付处理中</div>
+        <div class="muted tiny">服务端 TCC 编排中，正在轮询支付单终态（PROCESSING → SUCCESS）…</div>
+        <button class="btn-ghost" id="refreshBtn" style="max-width:200px">刷新状态</button>
+      </div>
+      <!-- 终态 -->
+      <div class="result-body" id="resultBody" style="display:none">
+        <div class="result-icon" id="resultIcon"><svg><use href="#i-check"/></svg></div>
+        <div class="result-title" id="resultTitle">支付成功</div>
+        <div class="result-amount num"><span class="cur">¥</span><span id="resultAmount">0.00</span></div>
+        <div class="banner error" id="failReason" style="width:100%"></div>
+        <div class="result-meta" id="resultMeta"></div>
+        <div class="result-actions">
+          <button class="btn-primary" id="doneBtn">完成</button>
+          <button class="btn-ghost" id="retryBtn" style="display:none">重新支付</button>
+          <button class="btn-ghost" id="detailBtn">查看订单详情</button>
+        </div>
+      </div>
+    </div>
+    <div class="home-bar"></div>
+  </div></div>
+</div>
+<script src="app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var q = PP.qs(), pid = q.paymentId, orderId = q.orderId;
+  if (!pid) { PP.go("wallet.html"); return; }
+  var METHOD_NAME = { BALANCE: "余额", CARD: "银行卡", BANKCARD: "银行卡" };
+  function metaRow(k, v, cls) {
+    var r = document.createElement("div"); r.className = "rm-row";
+    var kk = document.createElement("span"); kk.className = "k"; kk.textContent = k;
+    var vv = document.createElement("span"); if (cls) vv.className = cls; vv.textContent = v;
+    r.appendChild(kk); r.appendChild(vv); return r;
+  }
+  function fmtTime(ms) {
+    if (!ms) return "—";
+    var d = new Date(Number(ms));
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+  function renderTerminal(p) {
+    document.getElementById("procWrap").style.display = "none";
+    var body = document.getElementById("resultBody"); body.style.display = "flex";
+    var icon = document.getElementById("resultIcon");
+    var ok = p.status === "SUCCESS";
+    document.getElementById("resultAmount").textContent = PP.fmtPlain(p.amount);
+    var meta = document.getElementById("resultMeta"); meta.innerHTML = "";
+    var title = document.getElementById("resultTitle");
+    var retry = document.getElementById("retryBtn");
+    if (ok) {
+      icon.className = "result-icon"; icon.innerHTML = '<svg><use href="#i-check"/></svg>';
+      title.textContent = "支付成功";
+      retry.style.display = "none";
+    } else {
+      icon.className = "result-icon fail"; icon.innerHTML = '<svg><use href="#i-close"/></svg>';
+      title.textContent = p.status === "REFUNDED" ? "已退款" : "支付失败";
+      var fr = document.getElementById("failReason");
+      fr.textContent = p.failReason || "支付未成功，请重试或更换支付方式"; fr.classList.add("show");
+      retry.style.display = "flex";
+    }
+    PP.api("GET", "/api/orders/" + (orderId || p.orderId)).then(function (o) {
+      meta.appendChild(metaRow("收款商户", o.merchantName || "—"));
+      meta.appendChild(metaRow("支付方式", METHOD_NAME[p.method] || p.method));
+      meta.appendChild(metaRow("交易单号", o.id, "num"));
+      meta.appendChild(metaRow("支付单号", p.id, "num"));
+      meta.appendChild(metaRow("支付时间", fmtTime(o.paidAt || p.createdAt), "num"));
+      meta.appendChild(metaRow("资金保障", ok ? "服务端 TCC 已确认" : "未扣款 / 服务端保障", ok ? "num" : ""));
+    }).catch(function () {
+      meta.appendChild(metaRow("支付方式", METHOD_NAME[p.method] || p.method));
+      meta.appendChild(metaRow("支付单号", p.id, "num"));
+    });
+  }
+  function start() {
+    document.getElementById("procWrap").style.display = "flex";
+    document.getElementById("resultBody").style.display = "none";
+    PP.pollPayment(pid, function (p) {
+      if (p.status !== "PROCESSING") renderTerminal(p);
+    }, 30000).then(function (p) {
+      if (p.status === "PROCESSING") { PP.toast("仍在处理中，可点击刷新", true); }
+      else renderTerminal(p);
+    }).catch(function (e) { PP.toast(e.message || "查询失败", true); });
+  }
+  document.getElementById("refreshBtn").addEventListener("click", start);
+  document.getElementById("doneBtn").addEventListener("click", function () { PP.go("wallet.html"); });
+  document.getElementById("detailBtn").addEventListener("click", function () { PP.go("bill.html"); });
+  document.getElementById("retryBtn").addEventListener("click", function () {
+    PP.api("GET", "/api/payments/" + pid).then(function (p) {
+      PP.go("cashier.html", { orderId: p.orderId, accountId: p.payerAccountId });
+    }).catch(function () { PP.go("wallet.html"); });
+  });
+  start();
+})();
+</script>
+</body>
+</html>

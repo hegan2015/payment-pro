@@ -1,0 +1,143 @@
+{
+  "_comment": "R-5 设备指纹/IP 画像 + R-6 AML 配置样例（仓库只留 example，真实值放 ~/.config/payment-pro/config.properties 或 Apollo namespace risk-rules）。所有键默认值宽松/影子，正常 ride/smoke 流量零影响。",
+
+  "risk.device.enabled": "true",
+  "risk.device.profile-score-enabled": "false",
+  "risk.device.multi-account-threshold": "5",
+  "risk.device.drift-threshold": "3",
+  "risk.device.mask-enabled": "true",
+  "risk.device.retention-days": "90",
+
+  "risk.ip.profile-score-enabled": "false",
+  "risk.ip.multi-account-threshold": "10",
+  "risk.ip.history-reject-threshold": "3",
+  "risk.ip.retention-days": "90",
+  "risk.ip.sandbox.json": [
+    {"cidr": "203.0.113.0/24", "region": "文档网段 TEST-NET-3", "country": "CN", "proxy": false, "idc": true},
+    {"cidr": "185.220.101.0/24", "region": "德国·Tor 出口节点", "country": "DE", "proxy": true, "idc": true},
+    {"cidr": "45.83.0.0/16", "region": "荷兰·阿姆斯特丹", "country": "NL", "proxy": true, "idc": true},
+    {"cidr": "114.114.114.0/24", "region": "中国·江苏·南京", "country": "CN", "proxy": false, "idc": false}
+  ],
+
+  "risk.behavior.enabled": "true",
+  "risk.behavior.window-millis": "60000",
+  "risk.behavior.max-count": "20",
+  "risk.behavior.retention-days": "30",
+
+  "risk.aml.enabled": "true",
+  "risk.aml.hard-block-enabled": "false",
+  "risk.aml.score-enabled": "false",
+  "risk.aml.screening-enabled": "true",
+  "risk.aml.dispute-enabled": "true",
+  "risk.aml.auto-scan-enabled": "false",
+  "risk.aml.scan-interval-ms": "60000",
+  "risk.aml.large-amount": "5000000",
+  "risk.aml.day-amount": "5000000",
+  "risk.aml.split-count": "10",
+  "risk.aml.structuring-count": "3",
+  "risk.aml.structuring-ratio": "90",
+  "risk.aml.fast-window-millis": "600000",
+  "risk.aml.fast-ratio": "90",
+  "risk.aml.night-hours": "0,1,2,3,4,5",
+  "risk.aml.night-amount": "1000000",
+  "risk.aml.cross-border-amount": "1000000",
+  "risk.aml.retention-days": "1825",
+  "risk.aml.rules.json": [
+    {
+      "id": "AML_LARGE",
+      "name": "大额交易监测",
+      "ruleType": "LARGE_AMOUNT",
+      "threshold": 5000000,
+      "minCount": 1,
+      "score": 60,
+      "hardRule": false,
+      "realtime": true,
+      "status": "ENABLED"
+    },
+    {
+      "id": "AML_SPLIT",
+      "name": "拆分交易（分散转入集中转出）",
+      "ruleType": "SPLIT",
+      "threshold": 5000000,
+      "minCount": 10,
+      "score": 70,
+      "hardRule": false,
+      "realtime": false,
+      "status": "ENABLED"
+    },
+    {
+      "id": "AML_STRUCT",
+      "name": "结构化交易（贴近阈值多笔）",
+      "ruleType": "STRUCTURING",
+      "threshold": 5000000,
+      "minCount": 3,
+      "ratio": 90,
+      "score": 70,
+      "hardRule": false,
+      "realtime": false,
+      "status": "ENABLED"
+    },
+    {
+      "id": "AML_FAST",
+      "name": "快进快出",
+      "ruleType": "FAST_IN_OUT",
+      "threshold": 1000000,
+      "windowMillis": 600000,
+      "ratio": 90,
+      "score": 80,
+      "hardRule": false,
+      "realtime": false,
+      "status": "ENABLED"
+    },
+    {
+      "id": "AML_NIGHT",
+      "name": "异常时段交易",
+      "ruleType": "ABNORMAL_HOUR",
+      "threshold": 1000000,
+      "minCount": 1,
+      "score": 50,
+      "hardRule": false,
+      "realtime": true,
+      "status": "ENABLED"
+    },
+    {
+      "id": "AML_CROSS",
+      "name": "跨境交易",
+      "ruleType": "CROSS_BORDER",
+      "threshold": 1000000,
+      "minCount": 1,
+      "score": 60,
+      "hardRule": false,
+      "realtime": true,
+      "status": "ENABLED"
+    },
+    {
+      "id": "AML_SANCTION",
+      "name": "制裁名单命中",
+      "ruleType": "SANCTION",
+      "score": 100,
+      "hardRule": false,
+      "realtime": true,
+      "status": "ENABLED"
+    },
+    {
+      "id": "AML_PEP",
+      "name": "政要（PEP）名单命中",
+      "ruleType": "PEP",
+      "score": 90,
+      "hardRule": false,
+      "realtime": true,
+      "status": "ENABLED"
+    },
+    {
+      "id": "AML_CUSTOM_EXAMPLE",
+      "name": "自定义 QLExpress 表达式（复用既有引擎与护栏）",
+      "ruleType": "CUSTOM",
+      "conditionExpr": "dayAmount(payerId) > 20000000 && dayCount(payerId) >= 5",
+      "score": 75,
+      "hardRule": false,
+      "realtime": false,
+      "status": "DISABLED"
+    }
+  ]
+}

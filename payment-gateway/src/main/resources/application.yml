@@ -7,6 +7,23 @@ spring:
 
 payment:
   fee-bps: ${FEE_BPS:60}
+  # I-9 多实例：实例标识（响应头 X-Instance-Id / 灰度状态回显），第二实例用 GATEWAY_INSTANCE_ID 错开
+  instance:
+    id: ${GATEWAY_INSTANCE_ID:gateway-${GATEWAY_PORT:8080}}
+  # I-9 灰度发布：默认关闭（回滚态）。docker 状态入共享 Redis，多实例一致、一键回滚即时生效。
+  gray:
+    enabled: ${PP_GRAY_ENABLED:false}
+    weight: ${PP_GRAY_WEIGHT:0}
+    tag: ${PP_GRAY_TAG:gray}
+    target: ${PP_GRAY_TARGET:}
+  auth:
+    session:
+      ttl-seconds: ${PP_SESSION_TTL:3600}
+      redis:
+        enabled: false  # local 零依赖：内存会话；docker profile 用 Redis
+    login:
+      max-failures: ${PP_LOGIN_MAX_FAILURES:5}
+      window-seconds: ${PP_LOGIN_WINDOW_SECONDS:60}
 
 dubbo:
   application:
@@ -24,3 +41,28 @@ dubbo:
     check: false
     timeout: 8000
     retries: 0
+
+# I-8 可观测：actuator 与业务 HTTP 同端口 8080（HTTPS 8443 连接器亦可达）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  health:
+    redis:
+      enabled: false  # local 无 Redis 依赖；docker profile 重新启用
+
+# G-2 API 文档（springdoc，零外部依赖）：/v3/api-docs[/{group}] + /swagger-ui.html
+# 分组 console(/api/**) 与 merchant(/openapi/**) 见 OpenApiDocConfig；敏感 schema 生成期剔除。
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    disable-swagger-default-petstore: true
+    tags-sorter: alpha
+    operations-sorter: alpha
+  default-produces-media-type: application/json

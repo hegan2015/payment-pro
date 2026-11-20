@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>登录 · payment-pro 收银台</title>
+<link rel="stylesheet" href="design-system.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="login">
+<div class="h5-stage">
+  <div class="phone"><div class="notch"></div><div class="phone-screen">
+    <div class="statusbar"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+    <div class="screen-body">
+      <div class="login-body">
+        <div class="login-brand">
+          <span class="login-mark"><svg><use href="#i-wallet"/></svg></span>
+          <div class="login-title">payment-pro 收银台</div>
+          <div class="login-sub">与支付宝对齐的 C 端移动收银台<br>余额 · 银行卡 · 付款码 · 扫一扫</div>
+        </div>
+        <div class="banner error" id="loginErr"></div>
+        <div class="field"><label for="u">账号</label><input id="u" type="text" autocomplete="username" value="admin" placeholder="请输入账号"></div>
+        <div class="field"><label for="p">口令</label><input id="p" type="password" autocomplete="current-password" placeholder="请输入口令"></div>
+        <button class="btn-primary" id="loginBtn">登录并进入收银台</button>
+        <div class="login-note">沙箱登录复用控制台 Bearer 会话（默认 admin / admin123，即 PP_ADMIN_PASSWORD）。<br>真实消费者免登/会员登录需主会话补 SecurityConfig 开放面与会员认证流。</div>
+      </div>
+    </div>
+    <div class="home-bar"></div>
+  </div></div>
+</div>
+<script src="app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var btn = document.getElementById("loginBtn");
+  var err = document.getElementById("loginErr");
+  function showErr(m) { err.textContent = m; err.classList.add("show"); }
+  function doLogin() {
+    var u = document.getElementById("u").value.trim();
+    var p = document.getElementById("p").value;
+    if (!u || !p) { showErr("请输入账号与口令"); return; }
+    btn.disabled = true; btn.textContent = "登录中…";
+    PP.login(u, p).then(function () {
+      var next = PP.qs().next;
+      if (next && next.indexOf("/h5/") === 0) { location.href = next; }
+      else { PP.go("wallet.html"); }
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = "登录并进入收银台";
+      showErr(e.message || "登录失败");
+    });
+  }
+  btn.addEventListener("click", doLogin);
+  document.getElementById("p").addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+})();
+</script>
+</body>
+</html>

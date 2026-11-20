@@ -1,8 +1,12 @@
+# I-8 可观测：本域无业务 HTTP，内嵌 Tomcat 仅承载 actuator（1808x 与 Dubbo 2088x 错开）
+server:
+  port: ${MEMBER_HTTP_PORT:18081}
+
 spring:
   application:
     name: payment-member
   main:
-    web-application-type: none
+    web-application-type: servlet
   datasource:
     url: jdbc:h2:file:${DATA_DIR:./data}/member;MODE=MySQL;DATABASE_TO_LOWER=TRUE
     driver-class-name: org.h2.Driver
@@ -16,6 +20,26 @@ spring:
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
+
+# M-1 密钥轮换宽限期 / 证书到期告警阈值
+payment:
+  member:
+    secret:
+      grace-seconds: ${PP_SECRET_GRACE_SECONDS:86400}
+    cert:
+      warn-days: ${PP_CERT_WARN_DAYS:30}
+      scan-interval-ms: ${PP_CERT_SCAN_INTERVAL_MS:60000}
+    # M-5 C 端会话/登录（local 零依赖内存会话；docker profile 切 Redis）
+    session:
+      ttl-seconds: ${PP_MEMBER_SESSION_TTL:3600}
+      redis:
+        enabled: false
+    login:
+      max-failures: ${PP_MEMBER_LOGIN_MAX_FAILURES:5}
+      lock-minutes: ${PP_MEMBER_LOGIN_LOCK_MINUTES:15}
+    sms:
+      ttl-seconds: 300
+      interval-seconds: 60
 
 dubbo:
   application:
@@ -33,3 +57,16 @@ dubbo:
     check: false
     timeout: 5000
     retries: 0
+
+# I-8 可观测：local 零依赖暴露端点，docker 供共享栈 Prometheus scrape
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  health:
+    redis:
+      enabled: false  # M-5 local 零依赖：内存会话，不探测 Redis；docker profile 重新启用

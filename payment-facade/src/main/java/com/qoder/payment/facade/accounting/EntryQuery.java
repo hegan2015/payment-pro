@@ -16,6 +16,13 @@ public class EntryQuery implements Serializable {
     private String bizNo;
     private String dir;
     private String keyword;
+    /** AC-2 科目代码筛选（additive，可选；null 不过滤，既有口径不变）。 */
+    private String subjectCode;
+    /** AC-3 会计日筛选（additive，可选）。 */
+    private Long bizDate;
+    /** AC-4 created_at 毫秒区间（含头不含尾，additive，可选）。 */
+    private Long dateFrom;
+    private Long dateTo;
     private int page = 1;
     private int size = 20;
 

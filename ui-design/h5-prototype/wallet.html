@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>钱包 · payment-pro 收银台</title>
+<link rel="stylesheet" href="design-system.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="wallet">
+<div class="h5-stage">
+  <div class="phone"><div class="notch"></div><div class="phone-screen">
+    <div class="statusbar on-blue"><span class="num">9:41</span><span class="sb-right"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><svg><use href="#i-battery"/></svg></span></div>
+    <div class="screen-body scroll">
+      <div class="wallet-top">
+        <div class="wallet-balance-label">余额（元）<svg style="width:14px;height:14px"><use href="#i-eye"/></svg></div>
+        <div class="wallet-balance num"><span class="cur">¥</span><span id="walletBal">0.00</span></div>
+        <div class="wallet-actions">
+          <button class="wallet-action" data-nav="scan.html"><svg><use href="#i-scan"/></svg>扫一扫</button>
+          <button class="wallet-action" data-nav="paycode.html"><svg><use href="#i-code"/></svg>付款码</button>
+          <button class="wallet-action" data-demo="卡包"><svg><use href="#i-card"/></svg>卡包</button>
+          <button class="wallet-action" data-nav="bill.html"><svg><use href="#i-bill"/></svg>账单</button>
+        </div>
+      </div>
+      <div class="card wallet-grid">
+        <div class="wallet-grid-item" data-demo="余额宝"><span class="gi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-balance"/></svg></span>余额宝</div>
+        <div class="wallet-grid-item" data-demo="花呗"><span class="gi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-huabei"/></svg></span>花呗</div>
+        <div class="wallet-grid-item" data-demo="红包"><span class="gi-icon" style="background:hsl(var(--danger-soft));color:hsl(var(--danger))"><svg><use href="#i-redpacket"/></svg></span>红包</div>
+        <div class="wallet-grid-item" data-demo="转账"><span class="gi-icon" style="background:hsl(var(--success-soft));color:hsl(var(--success))"><svg><use href="#i-transfer"/></svg></span>转账</div>
+        <div class="wallet-grid-item" data-demo="充值"><span class="gi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-topup"/></svg></span>充值</div>
+        <div class="wallet-grid-item" data-demo="提现"><span class="gi-icon" style="background:hsl(var(--primary-soft));color:hsl(var(--primary))"><svg><use href="#i-withdraw"/></svg></span>提现</div>
+        <div class="wallet-grid-item" data-demo="银行卡"><span class="gi-icon" style="background:hsl(var(--gold)/.18);color:#8a5a00"><svg><use href="#i-bank"/></svg></span>银行卡</div>
+        <div class="wallet-grid-item" data-demo="更多"><span class="gi-icon" style="background:hsl(var(--fill));color:hsl(var(--ink-3))"><svg><use href="#i-more"/></svg></span>更多</div>
+      </div>
+      <div class="card wallet-section">
+        <div class="ws-head">我的银行卡<span class="more" id="cardMgr">管理 ›</span></div>
+        <div id="cardList">
+          <div class="bankcard-row"><span class="bc-logo" style="background:#E60012">招</span><div class="bc-text"><div class="bc-name">招商银行储蓄卡 <span class="tag tag-reserved">示意</span></div><div class="bc-no num">**** **** **** 8888</div></div><span class="tag tag-blue">默认</span></div>
+          <div class="bankcard-row"><span class="bc-logo" style="background:#0052E0">建</span><div class="bc-text"><div class="bc-name">建设银行信用卡 <span class="tag tag-reserved">示意</span></div><div class="bc-no num">**** **** **** 6621</div></div></div>
+        </div>
+      </div>
+      <div class="pad-4">
+        <button class="btn-primary" id="toCashier"><svg style="width:20px;height:20px"><use href="#i-wallet"/></svg>去收银台付款</button>
+        <div class="login-note mt-3">余额为沙箱示例账户实时余额（CSHTEST 前缀）；绑卡/余额宝/花呗等为预留入口（A-2/P2）。</div>
+        <button class="btn-ghost mt-3" id="logoutBtn">退出登录</button>
+      </div>
+    </div>
+    <div class="home-bar"></div>
+  </div></div>
+</div>
+<script src="app.js"></script>
+<script>
+(function () {
+  "use strict";
+  function load() {
+    PP.provisionDemo().then(function (demo) {
+      return PP.api("GET", "/api/accounting/accounts/" + demo.accountId + "/balance").then(function (b) {
+        document.getElementById("walletBal").textContent = PP.fmtPlain(b);
+      });
+    }).catch(function (e) { PP.toast(e.message || "加载失败", true); });
+  }
+  document.querySelectorAll("[data-nav]").forEach(function (el) {
+    el.addEventListener("click", function () { PP.go(el.getAttribute("data-nav")); });
+  });
+  document.querySelectorAll("[data-demo]").forEach(function (el) {
+    el.addEventListener("click", function () { PP.toast(el.getAttribute("data-demo") + " · 预留入口（演示）"); });
+  });
+  document.getElementById("cardMgr").addEventListener("click", function () { PP.toast("卡包管理 · 绑卡 A-2 泳道"); });
+  document.getElementById("toCashier").addEventListener("click", function () {
+    PP.provisionDemo().then(function (demo) {
+      PP.go("cashier.html", { orderId: demo.orderId, accountId: demo.accountId });
+    }).catch(function (e) { PP.toast(e.message || "创建示例订单失败", true); });
+  });
+  document.getElementById("logoutBtn").addEventListener("click", function () { PP.logout(); });
+  load();
+})();
+</script>
+</body>
+</html>

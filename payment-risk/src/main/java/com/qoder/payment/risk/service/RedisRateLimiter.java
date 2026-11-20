@@ -1,6 +1,7 @@
 package com.qoder.payment.risk.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -13,6 +14,7 @@ import java.util.UUID;
  * Redis 滑动窗口限流（docker 模式）：ZSET 按时间戳记分，Lua 原子裁剪+计数+写入，
  * 跨实例共享、重启不丢。语义与内存版一致：windowMillis 内最多 max 笔。
  */
+@Slf4j
 @Component
 @ConditionalOnProperty(prefix = "payment.risk.redis", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
@@ -34,5 +36,17 @@ public class RedisRateLimiter implements RateLimiter {
         Long allowed = redis.execute(SCRIPT, List.of(key),
                 String.valueOf(now), String.valueOf(windowMillis), String.valueOf(max), member);
         return allowed != null && allowed == 1L;
+    }
+
+    /** R-1/R-4 只读观测：ZCOUNT 窗口内成员数（不写入、不消耗额度）；异常返回 -1=无信息。 */
+    @Override
+    public long countInWindow(String payer, long now, long windowMillis) {
+        try {
+            Long n = redis.opsForZSet().count("pp:risk:window:" + payer, now - windowMillis, Double.MAX_VALUE);
+            return n == null ? 0L : n;
+        } catch (Exception e) {
+            log.warn("限频窗口观测失败（按无信息处理，不加分）payer={}: {}", payer, e.getMessage());
+            return -1L;
+        }
     }
 }

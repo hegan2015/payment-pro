@@ -7,3 +7,24 @@ spring:
   sql:
     init:
       mode: never
+
+# I-3 分布式调度：执行器注册到共享栈 XXL-Job admin（claim-shared-xxl-job-admin:8094）。
+# accessToken 由 ~/.config/payment-pro/docker.env 的 XXL_JOB_ACCESS_TOKEN 注入（仓库外，不落仓库）。
+# executor-ip=host.docker.internal：调度中心在容器内，须经 Docker Desktop DNS 回调宿主执行器。
+# 降级：admin 不可达/未驱动 notifyPush → LocalScheduledRunner 自动回切本地 @Scheduled 兜底。
+payment:
+  job:
+    xxl:
+      enabled: ${PAYMENT_XXL_ENABLED:true}
+      admin-addresses: ${PAYMENT_XXL_ADMIN:http://127.0.0.1:8094/xxl-job-admin}
+      appname: ${NOTIFY_XXL_APPNAME:payment-notify-executor}
+      executor-ip: ${PAYMENT_XXL_EXECUTOR_IP:host.docker.internal}
+      port: ${NOTIFY_XXL_PORT:9997}
+      access-token: ${XXL_JOB_ACCESS_TOKEN:}
+      log-path: logs/xxl-job/notify
+    local:
+      enabled: true
+      standby-when-xxl-healthy: true
+      stall-threshold-ms: 10000
+    shedlock:
+      enabled: true

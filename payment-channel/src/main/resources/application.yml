@@ -1,8 +1,19 @@
+# I-8 可观测：本域无业务 HTTP，内嵌 Tomcat 仅承载 actuator（1808x 与 Dubbo 2088x 错开）
+server:
+  port: ${CHANNEL_HTTP_PORT:18087}
+
 spring:
   application:
     name: payment-channel
   main:
-    web-application-type: none
+    web-application-type: servlet
+  # CH-2b：沙箱回执推送 / 查询补单 / 模拟银行异步落地三个 job 并存，
+  # 调度线程池扩容避免 HTTP 往返阻塞其它 job（同步默认态三个 job 均立即返回，行为不变）。
+  # CH-6：签约代扣重试/收敛（15s）+ 签约事件 outbox 投递（10s）两个 job 追加 → 池扩至 5。
+  task:
+    scheduling:
+      pool:
+        size: 5
   datasource:
     url: jdbc:h2:file:${DATA_DIR:./data}/channel;MODE=MySQL;DATABASE_TO_LOWER=TRUE
     driver-class-name: org.h2.Driver
@@ -16,6 +27,14 @@ spring:
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
+
+# CH-1 渠道异步回执开关（默认 false=同步模拟银行，行为与增量前完全一致）。
+# 异步混沌：PAYMENT_CHANNEL_ASYNC=true 启动 channel + payment（两域须同开关，同一环境变量）。
+payment:
+  channel:
+    async: ${PAYMENT_CHANNEL_ASYNC:false}
+    async-delay-ms: ${PAYMENT_CHANNEL_ASYNC_DELAY_MS:3000}
+    async-batch-size: 50
 
 dubbo:
   application:
@@ -33,3 +52,14 @@ dubbo:
     check: false
     timeout: 5000
     retries: 0
+
+# I-8 可观测：local 零依赖暴露端点，docker 供共享栈 Prometheus scrape
+# CH-6：ppjob 暴露作业运维端点（signDeductRetry / signEventDispatch 手动触发，内网面 18087，不经网关）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,ppjob
+  endpoint:
+    health:
+      show-details: always

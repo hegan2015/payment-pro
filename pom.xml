@@ -34,6 +34,9 @@
         <module>payment-settle</module>
         <module>payment-notify</module>
         <module>payment-recon</module>
+        <!-- P2 X-3a/X-3b 营销域（A 泳道）：第 14 进程，Dubbo 20893 / actuator 18093；
+             不纳入网关 HealthService 的 13 进程清单，既有 13/13 硬断言不变 -->
+        <module>payment-marketing</module>
         <module>payment-gateway</module>
     </modules>
 
@@ -45,6 +48,20 @@
         <mybatis-starter.version>3.0.3</mybatis-starter.version>
         <zookeeper.version>3.8.4</zookeeper.version>
         <rocketmq.version>5.1.4</rocketmq.version>
+        <!-- I-3 XXL-Job（F 泳道）：与共享栈 xxl-job-admin 2.4.1 对齐；wave3-H 持锁期间代为补齐版本管理以解构建阻塞 -->
+        <xxl-job.version>2.4.1</xxl-job.version>
+        <!-- I-3 ShedLock（F 泳道）：Java17/Spring Boot 3.2 兼容线；wave3-H 持锁期间代为补齐版本管理以解构建阻塞 -->
+        <shedlock.version>5.13.0</shedlock.version>
+        <!-- I-2 Apollo（E 泳道）/ I-7 Sentinel（G 泳道）：wave3-H 持锁期间代为补齐版本管理以解构建阻塞 -->
+        <apollo.version>2.2.0</apollo.version>
+        <sentinel.version>1.8.7</sentinel.version>
+        <!-- I-5a ShardingSphere-JDBC（非资金域 settle/recon 试点）：5.5.0 支持 Spring Boot 3.2 / Java17，
+             含 sharding / readwrite-splitting / single 规则与 Standalone JDBC 元数据仓库 -->
+        <shardingsphere.version>5.5.0</shardingsphere.version>
+        <!-- I-5a workerId 分配用 Curator：与 Dubbo 3.2.14 自带 curator 线一致，避免版本分裂 -->
+        <curator.version>5.1.0</curator.version>
+        <!-- R-1 QLExpress（B 泳道）：p1-D 持锁期间代为补齐版本管理以解全 reactor POM 解析阻塞（additive） -->
+        <qlexpress.version>3.3.3</qlexpress.version>
     </properties>
 
     <dependencyManagement>
@@ -80,6 +97,75 @@
                 <groupId>org.apache.rocketmq</groupId>
                 <artifactId>rocketmq-client</artifactId>
                 <version>${rocketmq.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.xuxueli</groupId>
+                <artifactId>xxl-job-core</artifactId>
+                <version>${xxl-job.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.javacrumbs.shedlock</groupId>
+                <artifactId>shedlock-core</artifactId>
+                <version>${shedlock.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.javacrumbs.shedlock</groupId>
+                <artifactId>shedlock-spring</artifactId>
+                <version>${shedlock.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ctrip.framework.apollo</groupId>
+                <artifactId>apollo-client</artifactId>
+                <version>${apollo.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-core</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-parameter-flow-control</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <!-- Spring Boot 3/jakarta 必须用 6x adapter（同包名 webmvc，内部 jakarta.servlet）；
+                 6x 线 Central 仅发布到 1.8.6，与 sentinel-core 1.8.7 API 兼容 -->
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-spring-webmvc-6x-adapter</artifactId>
+                <version>1.8.6</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-apache-dubbo-adapter</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <!-- I-5a：ShardingSphere-JDBC（仅 payment.sharding.enabled=true 时装配 Bean，local 不加载不连接） -->
+            <dependency>
+                <groupId>org.apache.shardingsphere</groupId>
+                <artifactId>shardingsphere-jdbc</artifactId>
+                <version>${shardingsphere.version}</version>
+                <!-- 5.5.0 上游打包缺陷：test-* 制品被以 compile 传递但未发布到 Central，
+                     这里显式排除（只排测试夹具，不影响任何运行期能力） -->
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.apache.shardingsphere</groupId>
+                        <artifactId>shardingsphere-test-util</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.apache.shardingsphere</groupId>
+                        <artifactId>shardingsphere-test-fixture-database</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.apache.shardingsphere</groupId>
+                        <artifactId>shardingsphere-test-it-yaml</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.curator</groupId>
+                <artifactId>curator-framework</artifactId>
+                <version>${curator.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.dubbo</groupId>
@@ -127,6 +213,12 @@
                         <artifactId>logback-core</artifactId>
                     </exclusion>
                 </exclusions>
+            </dependency>
+            <!-- R-1 规则引擎 QLExpress（B 泳道）：p1-D 持锁期间代为补齐版本管理（additive，不改既有项） -->
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>QLExpress</artifactId>
+                <version>${qlexpress.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

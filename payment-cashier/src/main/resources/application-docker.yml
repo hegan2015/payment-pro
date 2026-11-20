@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    # P1 C-2/C-3：docker pp_cashier。createDatabaseIfNotExist=true 首连自动建库（不改 ops-pro），
+    # 表由 CashierSchemaUpgrade 启动期幂等补建（sql.init.mode=never 不重跑脚本）。
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/pp_cashier?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:}
+  sql:
+    init:
+      mode: never
+
+# I-2 配置中心（参考段，默认 false=local 文件降级同构；docker 启用 Apollo 见 config/apollo.env.example）
+payment:
+  config:
+    apollo:
+      enabled: ${PAYMENT_CONFIG_APOLLO_ENABLED:false}
+      meta: ${APOLLO_META:http://127.0.0.1:18070}
+      app-id: ${PAYMENT_CONFIG_APOLLO_APP_ID:payment-pro}
+      namespaces: ${PAYMENT_CONFIG_APOLLO_NAMESPACES:application,cashier}

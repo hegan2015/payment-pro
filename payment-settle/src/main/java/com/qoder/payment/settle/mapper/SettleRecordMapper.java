@@ -11,6 +11,7 @@ import java.util.List;
 @Mapper
 public interface SettleRecordMapper {
 
+    /** 单库取号（payment.sharding.enabled=false 时唯一取号路径，行为逐字节不变）。 */
     @Select("SELECT next_value_for('seq_settle')")
     long nextId();
 
@@ -30,15 +31,18 @@ public interface SettleRecordMapper {
     @Select("SELECT COUNT(*) FROM settle_record WHERE type='PAY'")
     int payCount();
 
-    @Select("SELECT COALESCE(SUM(gross),0) FROM settle_record WHERE type='PAY'")
-    long totalGross();
+    // I-5a 跨片聚合：SUM 必须作为顶层投影，ShardingSphere 归并引擎才会「各片 SUM 再相加」。
+    // 原 COALESCE(SUM(x),0) 把聚合藏在函数里会被当普通投影（只取首片值）→ 净额跨片失真。
+    // 空表时 SUM 返回 NULL，由 SettleService 统一 nullToZero，单库/分片两端结果完全一致。
+    @Select("SELECT SUM(gross) FROM settle_record WHERE type='PAY'")
+    Long totalGross();
 
-    @Select("SELECT COALESCE(SUM(CASE WHEN type='PAY' THEN fee ELSE -fee END),0) FROM settle_record")
-    long totalFee();
+    @Select("SELECT SUM(CASE WHEN type='PAY' THEN fee ELSE -fee END) FROM settle_record")
+    Long totalFee();
 
-    @Select("SELECT COALESCE(SUM(CASE WHEN type='PAY' THEN net ELSE -net END),0) FROM settle_record")
-    long totalNet();
+    @Select("SELECT SUM(CASE WHEN type='PAY' THEN net ELSE -net END) FROM settle_record")
+    Long totalNet();
 
-    @Select("SELECT COALESCE(SUM(gross),0) FROM settle_record WHERE type='REFUND'")
-    long totalRefund();
+    @Select("SELECT SUM(gross) FROM settle_record WHERE type='REFUND'")
+    Long totalRefund();
 }

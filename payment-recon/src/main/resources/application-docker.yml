@@ -7,3 +7,53 @@ spring:
   sql:
     init:
       mode: never
+
+# I-3 分布式调度：执行器注册到共享栈 XXL-Job admin（claim-shared-xxl-job-admin:8094）。
+# reconRun 支持分片广播（shardIndex/shardTotal），逐片 ShedLock 互斥、各片并行（RC-5 铺垫）。
+# accessToken 由 ~/.config/payment-pro/docker.env 的 XXL_JOB_ACCESS_TOKEN 注入（仓库外）。
+payment:
+  # I-5a ShardingSphere-JDBC 试点（仅 docker、仅非资金域）：
+  #   单库分表 pp_recon.recon_report_0..3，按 id CRC32 % 4；跨片 ORDER BY/LIMIT 由归并引擎处理。
+  #   原单表 recon_report 永久保留 + 分片期 additive 影子写回，PAYMENT_SHARDING_ENABLED=false 一键回滚。
+  #   dispute_order / dispute_fix_log / idempotent_record / shedlock / sequences 仍单库单表
+  #   （SINGLE 规则钉在主库）：差错平台与分片调度互斥零改动。
+  sharding:
+    enabled: ${PAYMENT_SHARDING_ENABLED:true}
+    shard-count: 4
+    tables:
+      recon_report: id
+    single-tables:
+      - dispute_order
+      - dispute_fix_log
+      - idempotent_record
+      - sequences
+      - shedlock
+      # P1-J 对账工作流新表（RC-2/RC-3/RC-4/RC-5）：批次/进度/渠道内外对账全部 SINGLE
+      - recon_batch
+      - recon_progress
+      - channel_recon_run
+      - channel_recon_diff
+    readwrite-splitting: true
+    mirror-legacy: true
+    sql-show: ${PAYMENT_SHARDING_SQL_SHOW:true}
+    pool:
+      maximum-pool-size: 8
+      minimum-idle: 2
+  idgen:
+    worker-id: ${RECON_IDGEN_WORKER_ID:-1}
+    zk-path: /payment-pro/idgen/workers
+  job:
+    xxl:
+      enabled: ${PAYMENT_XXL_ENABLED:true}
+      admin-addresses: ${PAYMENT_XXL_ADMIN:http://127.0.0.1:8094/xxl-job-admin}
+      appname: ${RECON_XXL_APPNAME:payment-recon-executor}
+      executor-ip: ${PAYMENT_XXL_EXECUTOR_IP:host.docker.internal}
+      port: ${RECON_XXL_PORT:9996}
+      access-token: ${XXL_JOB_ACCESS_TOKEN:}
+      log-path: logs/xxl-job/recon
+    local:
+      enabled: true
+      standby-when-xxl-healthy: true
+      stall-threshold-ms: 10000
+    shedlock:
+      enabled: true

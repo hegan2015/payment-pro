@@ -29,4 +29,19 @@ public class InMemoryRateLimiter implements RateLimiter {
             return true;
         }
     }
+
+    /** R-1/R-4 只读观测：裁剪过期点后返回窗口内笔数，不入队（不消耗额度）。 */
+    @Override
+    public long countInWindow(String payer, long now, long windowMillis) {
+        Deque<Long> window = windows.get(payer);
+        if (window == null) {
+            return 0L;
+        }
+        synchronized (window) {
+            while (!window.isEmpty() && now - window.peekFirst() > windowMillis) {
+                window.pollFirst();
+            }
+            return window.size();
+        }
+    }
 }
