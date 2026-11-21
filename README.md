@@ -2,11 +2,12 @@
 
 > 参考支付宝领域划分的工业级支付系统
 > Spring Boot 3.2 + Apache Dubbo 3.2 + 自研 XTS 风格 TCC + 事务性 Outbox
-> 版本：2.0.0（P0 23/23 + P1 47/47 + P2 17/19 验收；I-1 批准不做列入部署必改，I-6 待实现）｜ 文档日期：2026-11-20
+> 版本：2.1.0（P0 23/23 + P1 47/47 + P2 17/19 验收；营销核销纳入 TCC 事务边界根治崩溃窗口一致性，详见 §21.12）｜ 文档日期：2026-11-22
 > **文档三件套**：[REQUIREMENTS.md](REQUIREMENTS.md)（需求规格与验收）· [ARCHITECTURE.md](ARCHITECTURE.md)（架构与不变量红线）· 本文（详细设计/字段级 DDL/代码走读）
 > v2.0 P2 更新：**增值生态 17/19 验收**（详见 §21）——交易产品/担保/预授权/超时关闭、合并支付与分阶段、撤销vs退款边界与改价、组合支付叠加、保证金垫资、多币种、营销抵扣编排、开放平台应用授权/沙箱/配额计费/版本SDK、签约代扣、账户生命周期、多客户端、分片与影子双跑、灰度、可观测。**管理台 22 个原待建页全部建成真实页面并浏览器逐页实测 22/22 通过**，12 业务分组两级导航 69 项。
 > **v2.0 收口挖出并修复 8 个真缺陷**（T-5/T-6 代码早已落盘但验证脚本从未跑过，一跑即暴露；详见 §21.10）：MERGE_COMBO 退款腿级不守恒、分阶段撤销后无法重付、改价原价留痕被覆盖、合并受理前失败悬挂 PAYING、TCC 回滚不重开合并单、reopenMerge 拒绝 CLOSED 终态子订单、清算跑批 8s 超时误判 503、监控逐条远程查对端自撞 429。
 > **v2.0 双账本修复**（ride-pro 侧，详见 ARCHITECTURE §9.3）：在途误确认终态守卫、CARD 出资改外部清算户、监控基线污染、监控自撞限流；历史冲正已执行（pp RV8504 + ride 4 笔冲正腿），17 映射户全平、重算后 48+ 周期零报警。
+> **v2.1 营销 TCC 根治**（详见 §21.12）：营销核销纳入支付 TCC 事务边界——Try 只本地预占权益（无远程资金，失败回滚干净）、补贴直补商户在 Confirm 落（幂等可重试，崩溃恢复续驱必达）、Cancel 本地释放，accounting 冻结/扣用户净实付；根治「营销已动账但支付 begin 前崩溃」的补贴滞留窗口（reconverge 补丁 61b2e59 + 正确模型 16ac7b7）。recon 支付-账务一致双模型适配 + ROLLED_BACK 容忍。smoke 79/verify-marketing-orch 321/verify-marketing 191 全绿。
 > v1.9 P1 更新：**核心支付能力 47 卡全验收**（详见 §20）——渠道 SPI/沙箱/路由择优/对账文件/限额维护窗、QLExpress 风控规则引擎+多维限额+名单+评分分级、KYC/进件审核流/C端登录/多账户类型/绑卡/四原因冻结、T+N 结算+三层费率+分账守恒+提现沙箱+商户账单、会计科目体系+日切日终+账簿凭证+账实核对、多事件通知+查询重发+Swagger+统一错误码+双实例无状态与灰度、担保/预授权/多产品路由/超时关闭、日切批量与渠道内外对账+报表+分片调度、支付路由/组合支付按腿落账/分账编排/退款异步化/关闭撤销、收银台多方式渲染+付款码扫码+支付验证。**v2.0 更正：平台不自建 C 端 H5**，收银台能力以 `cashier.*` OpenAPI 开放给业务方自渲染（ride-pro 乘客端已落地，视觉对标支付宝）。十专项全绿（channel 111/risk 116/member-account 109/settle 158/accounting 255/notify-gw 149/trade 131/recon 83/payment-orchestration 107/cashier 199），smoke 79 + verify-pro 22 + **ride 24/24 门禁六次通过**。新增七条流程护栏见 §20.11。
 > v1.9 更新：P0 生产化升级（详见 §19）——账务红冲蓝补/挂账科目与凭证防篡改、差错处理平台与自动冲正策略（默认影子模式）、渠道异步回执 + tcc-core WAITING 增量与补单收敛、通知 HMAC/RSA2 签名、控制台 OAuth2 + RBAC + 审计、商户密钥多版本轮换与证书到期告警、大额双人复核 + 备付金账实核对 + 二次认证、13 域 Micrometer/Prometheus 可观测。已验收 17/23 卡：smoke 79、verify-pro 22、reverse 16、suspense 28、notify-sign 20、dispute 73、fund-guard 34+8、rbac 51、secret 32、metrics 96、reconverge 26，**ride-pro verify-integration 24/24 兼容门禁通过**。wave3（Apollo/XXL-Job/Sentinel/事务消息）与 I-5 分片进行中。
 > v1.8 更新：Docker 中间件集成（详见 §18）——双 profile（local 零依赖 / docker 共享栈）；MySQL 单实例多库 pp_*（序列函数同构）；RocketMQ PP_OUTBOX 主投递 + outbox 轮询兜底；Redis Lua 风控滑动窗口 + 网关商户缓存；Docker ZooKeeper 2181（跳过内嵌 registry）；run.sh --docker + 只读 H2→MySQL 迁移工具。smoke 79/79、verify-pro 22/22（docker）回归通过。文档已全面对齐双 profile 实现：§1.2 关键取舍（outbox 为可靠性底座/MQ 可插拔、H2 local·MySQL docker）、§1.3 技术选型（全栈版本与取舍）、§5.1 存储选型、§12.1 验签（MerchantCache）、附录 A 代码索引、附录 C DDL（MySQL 方言/POST/订单幂等键）、附录 D 契约（post/entriesPage/fundPay）、附录 E 走读（5 参 insert+afterCommit MQ 主投递、行号刷新）、附录 F 边界（F.9 中间件降级与资金单）
@@ -1492,6 +1493,29 @@ SYS_DEPOSIT 复用既有 2006 科目；SYS_ADVANCE 暂落 2999 待映射（申�
   - 闸门：恒需二次认证；大额走 `reviewGate("REPAIR_TERMINAL", requestId, amount, ...)` 双人复核（A0428）；操作人恒取会话用户。
   - 幂等：翻状态后为 SUCCESS，重复调用命中前置失败返回 409，不重复翻状态/不重复审计。
   - 验证：`verify-terminal-repair.py`（闸门/前置/资金快照分毫不动/试算 D=C 不变/对账六项 pass/语义违规计数 −1/幂等/非法路径/审计留痕）。
+
+### 21.12 营销核销纳入 TCC 事务边界（P-7 支付宝式直补商户资金模型，v2.1.0）
+
+**背景与根治的缺陷**：原营销抵扣编排（`MarketingPayService.apply`）在支付 TCC `begin` **之前**独立动账——券核销（营销域本地事务）+ 补贴 `D SYS_MARKETING / C 用户付款户`（远程账务）先于全局事务提交。若支付在 `begin` 前崩溃（xid=null、marketing=APPLIED），补单收敛 `reconverge` 仅置 FAILED 不回退营销，而 `marketingRollback` 作业只扫 ROLLBACK_PENDING，致**补贴滞留 + 券白核销**（资金不一致窗口）。首版修复（`reconverge` xid=null 出口补 `rollbackQuietly`，提交 61b2e59）闭合该出口；根治则将营销核销整体纳入 TCC 事务边界（提交 16ac7b7）。
+
+**正确资金模型（直补商户 + subsidy-at-Confirm）**：
+- **营销 Try（`MarketingTccService.reserveAll`）只本地预占权益**：券/红包 `AVAILABLE→FROZEN`、积分冻结、活动预算抢占，并落 USE 来源分摊。**不做任何远程资金调用**——故 Try 失败时 `TccParticipantTemplate` 回滚本地事务即干净释放，无远程补贴滞留（根治「远程资金嵌入会回滚的本地事务」缺陷；accounting 参与者无此问题因其冻结/过账全本地）。
+- **补贴在 Confirm 落**（`commitAll`）：逐项核销权益（`FROZEN→USED`、积分结算冻结、活动落核销单）+ 补贴 `D SYS_MARKETING / C 商户抵扣`（MKT 凭证，**直补商户**而非用户户）+ USE 分摊。Confirm 幂等可重试，崩溃恢复协调器续驱必达，**无空回滚滞留**。
+- **Cancel（`releaseAll`）只本地释放预占** + REFUND 分摊（Try 未动资金，无补贴可反向，绝不凭空反向）；空回滚/防悬挂由模板分支级保护。
+- **accounting 分支冻结/扣用户净实付**（订单额 − Σ抵扣）：`begin` 前 `quoteDeduction` 询价 Σ抵扣构建净实付上下文；Confirm 过账 `D 用户净实付 / C 商户(净实付−fee) / C SYS_FEE fee`。商户实收 = (净实付−fee) + 抵扣 = 订单额 − fee（**fee 基数仍订单全额，口径不变**）。守恒：订单额 = 净实付 + 抵扣。
+
+**关键适配（一次做对的长尾）**：
+- 积分 `commit` 独立 `settleFrozen` + SETTLE 流水，**不委托旧 `use()`**（旧 use 会补贴到用户户，与商户补贴同 bizNo 幂等冲突）。
+- payment 营销腿 `useId` 存 refId（核销单 Confirm 异步生成）→ refund 须 `selectByCoupon/selectByRedPacket/selectByActivity` 回退查核销单 + `casRefund` 用 `use.getId()`。
+- `rollbackLegs` 积分 bizKey 恒 `PU:paymentId`；`subsidyBack` 退回目标从原 MKT 凭证贷方户解析（直补退商户 / 兼容 standalone 退用户户）。
+- **recon「支付-账务一致」双模型适配**：借方 == 净实付（新直补商户）或 == 订单全额（旧补贴入用户户）皆一致；营销整体回退（ROLLED_BACK）净实付腿留存容忍（借方 ≤ 订单全额）。
+- 营销资金恒等核对改「取消单 USE/REFUND 对称（netUse−借方 == netRefund−贷方）+ 净额守恒」（TCC Try USE 含取消单，补贴仅成功单，旧「借方==gross USE」不再成立）。
+
+**参与者注册**：`MarketingTccFacadeImpl`（`@DubboService(group="marketing")`）经 I-6 配置驱动自注册（`payment.tcc.participant-groups=marketing`），无需改 `TccParticipants` 代码。`pp_marketing` 增 `tcc_branch_log`/`idempotent_record`（与 accounting 同构）。
+
+**验证**：smoke **79/79**、verify-marketing-orch **321/0**、verify-marketing **191/191** 全绿，fundCheck 资金守恒平衡。断言配套 sec5-8（TCC 失败语义：券释放 AVAILABLE、失败不落 payment 营销腿、用户余额=原余额−净实付）。
+
+**遗留既有污染（非本次引入）**：verify-pro[C] 事后 recon「支付-渠道一致」历史 CARD 缺渠道扣款（11-18~11-20 测试残留）+ ride verify-integration D1 司机卡 BUSY（H2 状态污染）——皆先于本次营销 TCC（BALANCE 不触渠道/ride），另行清理。
 
 ---
 
