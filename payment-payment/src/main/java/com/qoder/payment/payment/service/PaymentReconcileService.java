@@ -35,6 +35,8 @@ public class PaymentReconcileService {
     private final TccCoordinator coordinator;
     private final ChannelCompletionService channelCompletion;
     private final ReconcilePolicy policy;
+    /** P-7：begin 前崩溃恢复置 FAILED 时，须退回已先行入账的营销补贴（与风控拒绝/onCancelled 出口同范式）。 */
+    private final MarketingPayService marketingPayService;
     /** I-5b：补单留痕/终态翻转同样双写到影子侧（未装配分片时为 null，零影响）。 */
     private final org.springframework.beans.factory.ObjectProvider<ShardRowMirror> shardRowMirror;
 
@@ -81,8 +83,13 @@ public class PaymentReconcileService {
 
         String xid = payment.getXid();
         if (xid == null || xid.isBlank()) {
-            // 协调器记录缺失：begin 之前崩溃，分支从未注册、资金从未预留 → CAS 置 FAILED（幂等）
+            // 协调器记录缺失：begin 之前崩溃，TCC 分支从未注册、TCC 资金从未预留 → CAS 置 FAILED（幂等）。
+            // 但 P-7 营销补贴先于 TCC begin 独立动账（券已核销、D SYS_MARKETING/C 用户户已入账），
+            // 故此处 FAILED 仍须退回营销权益，否则补贴滞留 + 券白核销（marketing_status=APPLIED 不被兜底作业覆盖）。
             paymentMapper.finish(paymentId, "FAILED", "补单收敛: 无分布式事务记录，一阶段未执行");
+            if (payment.getMarketingAmount() != null && payment.getMarketingAmount() > 0) {
+                marketingPayService.rollbackQuietly(paymentId, "补单收敛(无dtx): 营销回退");
+            }
             mirror("payment", paymentId);
             log.warn("补单收敛置 FAILED（无 dtx 记录）paymentId={}", paymentId);
             return reload(paymentId);
