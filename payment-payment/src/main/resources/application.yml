@@ -40,6 +40,10 @@ dubbo:
 
 payment:
   fee-bps: ${FEE_BPS:60}
+  # P-7 支付宝式：营销 TCC 参与者 group（I-6 自注册按需建引用，check=false）。
+  # 营销域未启用时无营销分支注册，该引用不被调用，零影响；有营销诉求时协调器驱动营销 Try/Confirm/Cancel。
+  tcc:
+    participant-groups: ${PAYMENT_TCC_PARTICIPANT_GROUPS:marketing}
   # P2-E P-7 营销抵扣编排总开关（§5.5 回滚手段）：false 时「有营销诉求」的支付优雅拒绝，
   # 「无营销诉求」的支付完全不受影响（纯内存短路判定，零 RPC、零额外延迟、fee 口径不变）。
   # 营销进程未启动（PP_MARKETING_ENABLED=false）时同样优雅拒绝，不影响 13/13 健康与 ride 路径。

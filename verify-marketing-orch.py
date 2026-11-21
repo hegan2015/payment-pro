@@ -600,9 +600,9 @@ def sec5_orchestration(merchant, member, account, acts):
         lines = v.get("lines") or []
         debit = [x for x in lines if x["dir"] == "D"]
         credit = [x for x in lines if x["dir"] == "C"]
-        check(f"{leg['source']} 凭证 D SYS_MARKETING / C 用户户 且金额 {leg['amount']}",
+        check(f"{leg['source']} 凭证 D SYS_MARKETING / C 商户（直补商户）且金额 {leg['amount']}",
               len(debit) == 1 and debit[0]["accountId"] == "SYS_MARKETING" and debit[0]["amount"] == leg["amount"]
-              and len(credit) == 1 and credit[0]["accountId"] == account and credit[0]["amount"] == leg["amount"],
+              and len(credit) == 1 and credit[0]["accountId"] == merchant["accountId"] and credit[0]["amount"] == leg["amount"],
               str(v)[:220])
         check(f"{leg['source']} 凭证借贷恒等 balanced", v.get("balanced") is True
               and v.get("totalDebit") == v.get("totalCredit") == leg["amount"], str(v)[:160])
@@ -698,26 +698,25 @@ def sec6_rollback(merchant, member, account, acts):
     c_exp = coupon(member, 2000, 0, expired=True)
     d = expect_failure("6a 过期券", 5000, {"memberId": member, "couponIds": [c_ok["id"], c_exp["id"]]})
     if d:
-        check("6a：第一张券已退回 ROLLED_BACK（逆序回退）",
-              d["legs"][0]["status"] == "ROLLED_BACK", str(d["legs"]))
-        check("6a：券状态 REFUNDED（营销域退回留痕）",
-              mok(f"/coupons/{c_ok['id']}", step=False)["status"] == "REFUNDED")
-        check("6a：退回凭证 MKTR: 前缀可回查（资金反向 D 用户户/C SYS_MARKETING）",
-              ok(f"/api/accounting/vouchers/MKTR:C:{c_ok['id']}:{d['paymentId']}")["balanced"] is True)
-        check("6a：失败腿留痕（PENDING/FAILED，未核销）",
-              d["legs"][1]["status"] in ("PENDING", "FAILED"), str(d["legs"][1]))
+        # P-7 正确 TCC 模型：Try 本地预占失败 → 模板回滚本地事务（券 FROZEN+USE 回滚→AVAILABLE），
+        # 协调器空回滚不释放（无 Try 日志）；补贴在 Confirm 失败未落，无 MKTR 凭证；失败不落 payment 营销腿。
+        check("6a：第一张券预占回滚释放 AVAILABLE（TCC 本地回滚）",
+              mok(f"/coupons/{c_ok['id']}", step=False)["status"] == "AVAILABLE",
+              mok(f"/coupons/{c_ok['id']}", step=False)["status"])
+        check("6a：TCC 失败不落 payment 营销腿（权益由协调器回滚，无增量 leg）",
+              len(d["legs"]) == 0, str(d["legs"]))
     # 6b 积分不足
     c_b = coupon(member, 1000, 0)
     d = expect_failure("6b 积分不足", 5000, {"memberId": member, "couponIds": [c_b["id"]], "points": 99999999})
     if d:
-        check("6b：券已退回", mok(f"/coupons/{c_b['id']}", step=False)["status"] == "REFUNDED")
+        check("6b：券预占回滚释放 AVAILABLE", mok(f"/coupons/{c_b['id']}", step=False)["status"] == "AVAILABLE")
         check("6b：积分余额未被扣（失败整体回滚）", mok(f"/points/{member}", step=False)["balance"] == 0)
     # 6c 活动预算不足
     c_c = coupon(member, 1000, 0)
     d = expect_failure("6c 活动预算不足", 5000,
                        {"memberId": member, "couponIds": [c_c["id"]], "activityIds": [a_poor["id"]]})
     if d:
-        check("6c：券已退回", mok(f"/coupons/{c_c['id']}", step=False)["status"] == "REFUNDED")
+        check("6c：券预占回滚释放 AVAILABLE", mok(f"/coupons/{c_c['id']}", step=False)["status"] == "AVAILABLE")
         check("6c：活动预算未超扣 used=0", mok(f"/activities/{a_poor['id']}", step=False)["used"] == 0)
     # 6d 抵扣超订单额（实付不得为负）
     c_d = coupon(member, 3000, 0)
@@ -732,7 +731,7 @@ def sec6_rollback(merchant, member, account, acts):
                        {"memberId": poor_member["id"], "couponIds": [c_e["id"]]}, acc=poor_acc["id"])
     if d:
         check("6e：补贴已退回，余额回到 0", bal(poor_acc["id"]) == 0, str(bal(poor_acc["id"])))
-        check("6e：券状态 REFUNDED", mok(f"/coupons/{c_e['id']}", step=False)["status"] == "REFUNDED")
+        check("6e：券 Cancel 释放 AVAILABLE", mok(f"/coupons/{c_e['id']}", step=False)["status"] == "AVAILABLE")
     # 6f 账户不属于权益会员（归属校验）
     other_member, other_acc = new_subject("USER")
     c_f = coupon(member, 1000, 0)
@@ -832,8 +831,8 @@ def sec7_realloc(merchant, member, account, acts):
           d4["allocation"]["sourceSum"] == 0 and d4["allocation"]["allocated"] == 0
           and d4["allocation"]["diff"] == 0 and d4["allocation"]["balanced"] is True, str(d4["allocation"]))
     check("整体回退：SYS_MARKETING 逐分复原", bal("SYS_MARKETING") == sysm0, f"{sysm0} -> {bal('SYS_MARKETING')}")
-    check("整体回退：用户余额 = 原余额 − 订单额（补贴全退回）",
-          bal(account) == u0 - amount, f"{u0} -> {bal(account)}")
+    check("整体回退：用户余额 = 原余额 − 净实付（直补商户：营销回退退商户补贴，不动用户净实付扣款）",
+          bal(account) == u0 - (amount - 6000), f"{u0} -> {bal(account)}")
     check("整体回退：积分回补 50000", mok(f"/points/{member}", step=False)["balance"] == 50000)
     check("整体回退：红包 REFUNDED", mok(f"/red-packets/{r['id']}", step=False)["status"] == "REFUNDED")
     d5 = ook(f"/rollback/{p['id']}", "POST", {"requestId": biz("RB")})
@@ -925,7 +924,7 @@ def sec8_combo(merchant, member, account, acts):
     if p3:
         d3 = ook(f"/deduction/{p3['id']}", step=False)
         check("COMBO 失败：营销权益已退回（净抵扣 0）", d3["netAmount"] == 0, str(d3))
-        check("COMBO 失败：券 REFUNDED", mok(f"/coupons/{c3['id']}", step=False)["status"] == "REFUNDED")
+        check("COMBO 失败：券 Cancel 释放 AVAILABLE", mok(f"/coupons/{c3['id']}", step=False)["status"] == "AVAILABLE")
         check("COMBO 失败：SYS_MARKETING 逐分复原", bal("SYS_MARKETING") == sysm1)
         check("COMBO 失败：用户余额回到 0", bal(poor_acc["id"]) == 0, str(bal(poor_acc["id"])))
         check("COMBO 失败：各腿 FAILED（不留悬挂）",

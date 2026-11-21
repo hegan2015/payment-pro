@@ -8,6 +8,7 @@ import com.qoder.payment.facade.account.AccountDTO;
 import com.qoder.payment.facade.account.AccountFacade;
 import com.qoder.payment.facade.marketing.ActivityApplyRequest;
 import com.qoder.payment.facade.marketing.ActivityUseDTO;
+import com.qoder.payment.facade.marketing.AllocItemDTO;
 import com.qoder.payment.facade.marketing.AllocTargetDTO;
 import com.qoder.payment.facade.marketing.BestPromotionDTO;
 import com.qoder.payment.facade.marketing.BestPromotionRequest;
@@ -16,6 +17,7 @@ import com.qoder.payment.facade.marketing.CouponUseRequest;
 import com.qoder.payment.facade.marketing.MarketingAllocDTO;
 import com.qoder.payment.facade.marketing.MarketingAllocRequest;
 import com.qoder.payment.facade.marketing.MarketingFacade;
+import com.qoder.payment.facade.marketing.MarketingTccContext;
 import com.qoder.payment.facade.marketing.PointsLogDTO;
 import com.qoder.payment.facade.marketing.PointsUseRequest;
 import com.qoder.payment.facade.marketing.PromotionPickDTO;
@@ -199,6 +201,126 @@ public class MarketingPayService {
         log.info("营销抵扣编排完成 paymentId={} memberId={} account={} 抵扣={} 实付={} 腿数={}",
                 paymentId, memberId, accountId, total, orderAmount - total, done.size());
         return total;
+    }
+
+    // ==================== P-7 支付宝式 TCC 支撑（营销纳入支付全局事务边界） ====================
+
+    /**
+     * 构建营销 TCC 分支上下文：解析 picks + 校验入账户=付款 BALANCE 户。无营销诉求/无选中项返回 null。
+     * 在 {@code coordinator.begin} 之前调用（纯解析，含 auto 模式 C-4 询价 RPC），失败即受理前拒绝。
+     */
+    public MarketingTccContext buildContext(PayRequest request, OrderDTO order, String paymentId,
+                                          String payerAccountId, String merchantAccountId) {
+        PayMarketing spec = request.getMarketing();
+        String memberId = spec.getMemberId();
+        if (memberId == null || memberId.isBlank()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "营销抵扣必须指定 memberId（权益归属会员）");
+        }
+        String accountId = spec.getAccountId() != null && !spec.getAccountId().isBlank()
+                ? spec.getAccountId() : payerAccountId;
+        if (accountId == null || accountId.isBlank()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "营销抵扣必须有付款 BALANCE 户（CARD 单腿不支持营销抵扣）");
+        }
+        if (!accountId.equals(payerAccountId)) {
+            throw new BizException(ResultCode.PARAM_ERROR,
+                    "营销抵扣入账户必须等于付款 BALANCE 户（否则净实付=订单额−Σ抵扣不成立）: " + accountId);
+        }
+        List<Pick> picks = resolvePicks(spec, memberId, accountId, order, paymentId);
+        if (picks.isEmpty()) {
+            return null;
+        }
+        MarketingTccContext ctx = new MarketingTccContext();
+        ctx.setPaymentId(paymentId);
+        ctx.setOrderId(order.getId());
+        ctx.setMemberId(memberId);
+        ctx.setAccountId(accountId);
+        ctx.setMerchantAccountId(merchantAccountId);
+        ctx.setOrderAmount(order.getAmount());
+        for (Pick p : picks) {
+            MarketingTccContext.Pick cp = new MarketingTccContext.Pick();
+            cp.setSource(p.source());
+            cp.setRefId(p.refId());
+            cp.setAmount(p.amount());
+            cp.setPoints(p.points());
+            ctx.getPicks().add(cp);
+        }
+        return ctx;
+    }
+
+    /**
+     * tryAll 成功后落 payment 侧营销明细 + APPLIED：抵扣额查营销域来源账（Try 预占即记 USE 分摊），
+     * 每腿金额取 getAllocation 来源项。返回 Σ抵扣额（分）。
+     */
+    /** P-7 TCC：begin 前询价 Σ抵扣额（确定性口径，不预占），供 accounting 分支计算净实付。 */
+    public long quoteTotal(MarketingTccContext ctx) {
+        if (ctx == null || ctx.getPicks().isEmpty()) {
+            return 0L;
+        }
+        return call(() -> marketingFacade.quoteDeduction(ctx)).orThrow();
+    }
+
+    public long recordApplied(String paymentId, MarketingTccContext ctx, PayMarketing spec, OrderDTO order) {
+        // P-7 正确模型：补贴/USE 分摊在 Confirm 落，tryAll 后 alloc 尚未记 USE，故 total 与每腿金额用询价（确定性口径）。
+        long total = quoteTotal(ctx);
+        long now = System.currentTimeMillis();
+        int seq = 0;
+        for (MarketingTccContext.Pick cp : ctx.getPicks()) {
+            seq++;
+            Pick pick = new Pick(cp.getSource(), cp.getRefId(), cp.getAmount(), cp.getPoints());
+            MarketingLegDO row = ensureLeg(paymentId, seq, pick);
+            if (LEG_USED.equals(row.getStatus())) {
+                continue;
+            }
+            long amount = quotePick(ctx, cp);
+            legMapper.markUsed(row.getId(), cp.getRefId(), legBizNo(cp.getSource(), cp.getRefId(), paymentId),
+                    "MOP:" + paymentId, amount, cp.getPoints(), now);
+        }
+        // 目标维度分摊（缺省单 ORDER 目标；Σ分摊=抵扣总额 diff=0，营销域强校验），与既有 apply 口径一致。
+        allocateTargets(spec, order, paymentId, total);
+        paymentMapper.updateMarketing(paymentId, total, STATUS_APPLIED);
+        mirror(paymentId);
+        log.info("营销 TCC 预占完成 paymentId={} 抵扣={} 腿数={}", paymentId, total, ctx.getPicks().size());
+        return total;
+    }
+
+    /**
+     * 协调器驱动营销 Cancel（释放预占 + 反向补贴）后，payment 侧明细/状态置 ROLLED_BACK。
+     * <b>不再调营销域退回</b>——权益释放与资金反向已由 TCC 营销分支 Cancel 完成，此处仅同步 payment 侧视图。
+     */
+    public void markRolledBack(String paymentId) {
+        long now = System.currentTimeMillis();
+        for (MarketingLegDO leg : legMapper.selectByPayment(paymentId)) {
+            if (LEG_USED.equals(leg.getStatus())) {
+                legMapper.casStatus(leg.getId(), LEG_USED, LEG_ROLLED_BACK, "TCC 回滚", now);
+            }
+        }
+        paymentMapper.updateMarketing(paymentId, 0L, STATUS_ROLLED_BACK);
+        mirror(paymentId);
+    }
+
+    /** 单腿询价金额（确定性口径，与营销域 resolveAmount 一致）。 */
+    private long quotePick(MarketingTccContext ctx, MarketingTccContext.Pick cp) {
+        MarketingTccContext one = new MarketingTccContext();
+        one.setPaymentId(ctx.getPaymentId());
+        one.setOrderId(ctx.getOrderId());
+        one.setMemberId(ctx.getMemberId());
+        one.setAccountId(ctx.getAccountId());
+        one.setMerchantAccountId(ctx.getMerchantAccountId());
+        one.setOrderAmount(ctx.getOrderAmount());
+        one.getPicks().add(cp);
+        return call(() -> marketingFacade.quoteDeduction(one)).orThrow();
+    }
+
+    private static final String MarketingFundService_TYPE_USE = "USE";
+
+    private static String legBizNo(String source, String refId, String paymentId) {
+        return switch (source) {
+            case SRC_COUPON -> "MKT:C:" + refId + ":" + paymentId;
+            case SRC_RED_PACKET -> "MKT:R:" + refId + ":" + paymentId;
+            case SRC_POINTS -> "MKT:P:PU:" + paymentId;
+            case SRC_ACTIVITY -> "MKT:A:" + refId + ":" + paymentId;
+            default -> "MKT:" + refId + ":" + paymentId;
+        };
     }
 
     /** 解析待核销项：auto=调 C-4 最优组合；否则按显式列表，顺序恒为 券→红包→积分→活动。 */
@@ -433,8 +555,7 @@ public class MarketingPayService {
                     case SRC_COUPON -> call(() -> marketingFacade.refundCoupon(leg.getUseId())).orThrow();
                     case SRC_RED_PACKET -> call(() -> marketingFacade.refundRedPacket(leg.getUseId())).orThrow();
                     case SRC_POINTS -> call(() -> marketingFacade.refundPoints(
-                            leg.getBizKey() != null ? leg.getBizKey() : "PU:" + paymentId,
-                            "MOPR:" + paymentId)).orThrow();
+                            "PU:" + paymentId, "MOPR:" + paymentId)).orThrow();
                     case SRC_ACTIVITY -> call(() -> marketingFacade.refundActivity(leg.getUseId())).orThrow();
                     default -> throw new BizException(ResultCode.BIZ_ERROR, "营销来源非法: " + leg.getSource());
                 }

@@ -59,6 +59,7 @@ public class MarketingFacadeImpl implements MarketingFacade {
     private final MarketingAuditMapper auditMapper;
     /** P2-E C-4 最优组合计算（additive，只读不核销）。 */
     private final com.qoder.payment.marketing.service.PromotionCalcService promotionCalcService;
+    private final com.qoder.payment.marketing.service.MarketingTccService marketingTccService;
 
     // ---------------- X-3a 模板 ----------------
 
@@ -255,6 +256,16 @@ public class MarketingFacadeImpl implements MarketingFacade {
     @Override
     public Result<MarketingAllocDTO> getAllocation(String paymentId) {
         return FacadeSupport.execute(() -> allocService.getAllocation(paymentId));
+    }
+
+    @Override
+    public Result<Long> deductionOf(String paymentId) {
+        return FacadeSupport.execute(() -> fundService.sourceNet(paymentId));
+    }
+
+    @Override
+    public Result<Long> quoteDeduction(com.qoder.payment.facade.marketing.MarketingTccContext ctx) {
+        return FacadeSupport.execute(() -> marketingTccService.quoteTotal(ctx));
     }
 
     @Override

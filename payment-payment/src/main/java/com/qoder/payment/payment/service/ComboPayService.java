@@ -14,6 +14,7 @@ import com.qoder.payment.facade.accounting.TransferLineDTO;
 import com.qoder.payment.facade.channel.ChannelTccContext;
 import com.qoder.payment.facade.payment.PayLeg;
 import com.qoder.payment.facade.payment.PayRequest;
+import com.qoder.payment.facade.marketing.MarketingTccContext;
 import com.qoder.payment.facade.payment.PayResultDTO;
 import com.qoder.payment.facade.payment.PaymentLegDTO;
 import com.qoder.payment.facade.payment.PaymentDTO;
@@ -238,26 +239,17 @@ public class ComboPayService {
             return result(replayed, true);
         }
 
-        // ==================== P2-E P-7 营销抵扣编排（marketing=false 时整段跳过，零影响） ====================
+        // ==================== P-7 支付宝式：营销纳入 TCC 事务边界（marketing=false 时整段跳过，零影响） ====================
+        // 正确模型：营销 Try 只本地预占权益，补贴直补商户在 Confirm 落；marketingAccount 腿 accounting 冻结净实付
+        // （腿额−Σ抵扣）。begin 前询价 Σ抵扣。崩溃恢复协调器统一驱动营销 Cancel（本地回滚干净）。
+        MarketingTccContext mktCtx = null;
+        long mktDeduction = 0L;
         if (marketing) {
             try {
-                marketingPayService.apply(request, order, payment.getId(), marketingAccount);
-                for (PayLeg leg : legs) {
-                    if (!"BALANCE".equals(leg.getMethod())) {
-                        continue;
-                    }
-                    AccountDTO after = accountFacade.get(leg.getAccountId()).orThrow();
-                    if (!"ACTIVE".equals(after.getStatus())) {
-                        throw new BizException(ResultCode.BIZ_ERROR, "付款账户已冻结: " + after.getId());
-                    }
-                    if (after.getBalance() < leg.getAmount()) {
-                        throw new BizException(ResultCode.BIZ_ERROR,
-                                "组合腿余额不足（营销抵扣后仍需 " + leg.getAmount() + "，可用 "
-                                        + after.getBalance() + "）: " + after.getId());
-                    }
-                }
+                mktCtx = marketingPayService.buildContext(request, order, payment.getId(),
+                        marketingAccount, merchantAccount.getId());
+                mktDeduction = marketingPayService.quoteTotal(mktCtx);
             } catch (RuntimeException e) {
-                marketingPayService.rollbackQuietly(payment.getId(), "组合受理失败: " + e.getMessage());
                 paymentMapper.finish(payment.getId(), "FAILED", MarketingPayService.shortReason("营销抵扣编排失败: " + e.getMessage()));
                 legMapper.finishByPaymentId(payment.getId(), "FAILED");
                 mirror(payment.getId());
@@ -286,10 +278,7 @@ public class ComboPayService {
                 legMapper.finishByPaymentId(payment.getId(), "FAILED");
                 mirror(payment.getId());
                 MetricsSupport.payFail("COMBO", payment.getBizType());
-                // P-7：风控拒绝须退回已核销营销权益（资金反向），绝不留下「支付失败但补贴已发」
-                if (marketing) {
-                    marketingPayService.rollbackQuietly(payment.getId(), "风控拒绝: " + riskResult.getReason());
-                }
+                // P-7 TCC：风控拒绝在 begin 之前，营销 Try 尚未执行（无预占/无补贴），无需回退。
                 throw new BizException(ResultCode.BIZ_ERROR, "风控拒绝: " + riskResult.getReason());
             }
         }
@@ -303,8 +292,16 @@ public class ComboPayService {
             mirror(payment.getId());
             log.info("组合支付受理 paymentId={} orderId={} total={} fee={} legs={} requestId={} xid={}",
                     payment.getId(), order.getId(), total, fee, legs.size(), request.getRequestId(), xid);
+            // P-7：营销分支注册在各腿 accounting 之前 ⇒ tryAll 先驱动营销 Try（本地预占权益）；
+            // marketingAccount 腿 accounting 冻结净实付（腿额−Σ抵扣，直补商户模型）；失败协调器统一 Cancel。
+            if (mktCtx != null) {
+                coordinator.registerBranch(xid, "marketing", "PAY", mktCtx);
+            }
             for (PaymentLegDO row : legRows) {
-                coordinator.registerBranch(xid, "accounting", "PAY", legAccountingContext(row, order, merchantAccount.getId()));
+                long legDeduction = (mktCtx != null && marketingAccount != null
+                        && marketingAccount.equals(row.getPayerAccountId())) ? mktDeduction : 0L;
+                coordinator.registerBranch(xid, "accounting", "PAY",
+                        legAccountingContext(row, order, merchantAccount.getId(), legDeduction));
                 if ("CARD".equals(row.getMethod())) {
                     ChannelTccContext channel = new ChannelTccContext();
                     channel.setBizNo(row.getId());
@@ -326,16 +323,16 @@ public class ComboPayService {
                 log.warn("组合受理让位（事务已回滚/关闭，防悬挂）xid={} status={}", xid, preTry);
                 throw new BizException(ResultCode.CONFLICT, "支付已关闭/回滚，受理让位: " + payment.getId());
             }
-            // 一腿 Try 失败 → tryAll 整体回滚（各腿解冻/空回滚），支付单 FAILED（完结监听）
+            // 一腿 Try 失败 → tryAll 整体回滚（各腿解冻/空回滚 + 营销 Cancel 释放），支付单 FAILED（完结监听）
             coordinator.tryAll(xid);
+            if (mktCtx != null) {
+                marketingPayService.recordApplied(payment.getId(), mktCtx, request.getMarketing(), order);
+            }
             coordinator.commitAsync(xid);
             return result(require(payment.getId()), false);
         } catch (RuntimeException e) {
-            // P-7：受理链路任何异常（含 TCC Try 失败）都退回已核销营销权益；
-            // 无营销诉求时本 catch 只原样重抛，组合支付行为与改造前逐字节一致。
-            if (marketing) {
-                marketingPayService.rollbackQuietly(payment.getId(), "组合受理失败: " + e.getMessage());
-            }
+            // P-7 TCC：营销预占/预补贴在 Try 阶段，失败由协调器 driveCancel 驱动营销 Cancel 释放+反向补贴；
+            // 受理前失败营销 Try 未执行无需回退。无营销诉求时组合支付行为与改造前逐字节一致。
             throw e;
         }
     }
@@ -397,17 +394,23 @@ public class ComboPayService {
     }
 
     private AccountingTccContext legAccountingContext(PaymentLegDO leg, OrderDTO order, String merchantAccountId) {
+        return legAccountingContext(leg, order, merchantAccountId, 0L);
+    }
+
+    /** P-7 直补商户模型：deduction=该腿营销抵扣额，用户扣净实付（腿额−抵扣），商户 C（净实付−腿费）。 */
+    private AccountingTccContext legAccountingContext(PaymentLegDO leg, OrderDTO order, String merchantAccountId, long deduction) {
         AccountingTccContext ctx = new AccountingTccContext();
         ctx.setBizNo(leg.getId());
         ctx.setRefId(order.getId());
         ctx.setSubject("组合支付-" + order.getSubject() + "-腿" + leg.getLegSeq());
         ctx.setReversed(false);
-        long net = leg.getAmount() - leg.getFee();
+        long payAmount = leg.getAmount() - deduction;
+        long net = payAmount - leg.getFee();
         List<TransferLineDTO> lines = new ArrayList<>();
         if ("BALANCE".equals(leg.getMethod())) {
-            lines.add(line(leg.getPayerAccountId(), "D", leg.getAmount()));
+            lines.add(line(leg.getPayerAccountId(), "D", payAmount));
         } else {
-            lines.add(line("SYS_CASH", "D", leg.getAmount()));
+            lines.add(line("SYS_CASH", "D", payAmount));
         }
         lines.add(line(merchantAccountId, "C", net));
         if (leg.getFee() > 0) {

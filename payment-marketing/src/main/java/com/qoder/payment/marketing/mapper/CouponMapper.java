@@ -46,6 +46,19 @@ public interface CouponMapper {
             + "WHERE id=#{id} AND status='AVAILABLE'")
     int casUse(@Param("id") String id, @Param("useId") String useId, @Param("now") long now);
 
+    /** TCC Try 预占 CAS：AVAILABLE → FROZEN。 */
+    @Update("UPDATE coupon SET status='FROZEN', updated_at=#{now} WHERE id=#{id} AND status='AVAILABLE'")
+    int casReserve(@Param("id") String id, @Param("now") long now);
+
+    /** TCC Confirm 核销 CAS：FROZEN → USED。 */
+    @Update("UPDATE coupon SET status='USED', use_id=#{useId}, updated_at=#{now} "
+            + "WHERE id=#{id} AND status='FROZEN'")
+    int casCommit(@Param("id") String id, @Param("useId") String useId, @Param("now") long now);
+
+    /** TCC Cancel 释放 CAS：FROZEN → AVAILABLE。 */
+    @Update("UPDATE coupon SET status='AVAILABLE', updated_at=#{now} WHERE id=#{id} AND status='FROZEN'")
+    int casRelease(@Param("id") String id, @Param("now") long now);
+
     /** 退回 CAS：USED → REFUNDED（终态，券作废；重新可用需重新发放，保 coupon_use.coupon_id UNIQUE 语义）。 */
     @Update("UPDATE coupon SET status='REFUNDED', updated_at=#{now} WHERE id=#{id} AND status='USED'")
     int casRefund(@Param("id") String id, @Param("now") long now);

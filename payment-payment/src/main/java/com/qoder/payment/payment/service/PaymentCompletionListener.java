@@ -197,23 +197,11 @@ public class PaymentCompletionListener implements TccCompletionListener {
                     reopen.run();
                 }
             }
-            // P2-E P-7：营销抵扣随全局事务回滚而退回（券/红包/积分/活动预算 + 资金反向 + 目标维度重分摊）。
-            // 本地事务内只置 ROLLBACK_PENDING（零 RPC），afterCommit 再执行退回；崩溃窗口由 marketingRollback 作业兜底。
+            // P-7 TCC：营销权益释放 + 资金反向已由协调器 driveCancel 驱动营销分支 Cancel 完成
+            // （Try 预占 → Cancel 释放预占+反向补贴，崩溃恢复走同一路径）。此处仅同步 payment 侧
+            // 明细/状态为 ROLLED_BACK，零营销 RPC，绝不与 TCC Cancel 双重退回。
             if (payment.getMarketingAmount() != null && payment.getMarketingAmount() > 0) {
-                paymentMapper.updateMarketingStatus(payment.getId(), MarketingPayService.STATUS_ROLLBACK_PENDING);
-                String paymentId = payment.getId();
-                String cause = "TCC 回滚: " + reason;
-                Runnable rollback = () -> marketingPayService.rollbackQuietly(paymentId, cause);
-                if (TransactionSynchronizationManager.isSynchronizationActive()) {
-                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                        @Override
-                        public void afterCommit() {
-                            rollback.run();
-                        }
-                    });
-                } else {
-                    rollback.run();
-                }
+                marketingPayService.markRolledBack(payment.getId());
             }
         }
         RefundDO refund = refundMapper.selectByXid(xid);

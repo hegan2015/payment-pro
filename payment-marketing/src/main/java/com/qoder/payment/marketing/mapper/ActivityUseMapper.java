@@ -25,6 +25,10 @@ public interface ActivityUseMapper {
     @Select("SELECT * FROM activity_use WHERE activity_id=#{activityId} AND payment_id=#{paymentId}")
     ActivityUseDTO selectByKey(@Param("activityId") String activityId, @Param("paymentId") String paymentId);
 
+    /** P-7 TCC：payment 营销腿 useId 存 activityId，按活动 id 回退查最近核销单。 */
+    @Select("SELECT * FROM activity_use WHERE activity_id=#{activityId} ORDER BY created_at DESC, id DESC LIMIT 1")
+    ActivityUseDTO selectByActivity(String activityId);
+
     @Select("SELECT * FROM activity_use WHERE request_id=#{requestId}")
     ActivityUseDTO selectByRequest(String requestId);
 

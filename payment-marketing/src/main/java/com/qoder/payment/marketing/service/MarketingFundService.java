@@ -76,7 +76,26 @@ public class MarketingFundService {
     public void subsidyBack(String bizNo, String accountId, long amount, String subject, String refId) {
         MarketingSupport.requireKey(bizNo);
         MarketingSupport.requireBiz(amount > 0, "营销退回金额必须为正整数（分）");
-        post(bizNo, accountId, SYS_MARKETING, amount, subject, refId);
+        // P-7 直补商户模型：退回目标=原补贴凭证的贷方户（商户）。从原 MKT 凭证解析贷方非系统户，
+        // 兼容 standalone（贷方用户户）；原凭证不存在（补贴未落）则回退传入账户。
+        String target = accountId;
+        String origBizNo = bizNo.startsWith(MarketingSupport.FUND_REFUND_PREFIX)
+                ? MarketingSupport.FUND_PREFIX + bizNo.substring(MarketingSupport.FUND_REFUND_PREFIX.length())
+                : bizNo;
+        try {
+            com.qoder.payment.facade.accounting.VoucherDTO orig = accountingFacade.voucher(origBizNo).orThrow();
+            if (orig != null && orig.getLines() != null) {
+                for (com.qoder.payment.facade.accounting.TransferLineDTO line : orig.getLines()) {
+                    if ("C".equals(line.getDir()) && !SYS_MARKETING.equals(line.getAccountId())) {
+                        target = line.getAccountId();
+                        break;
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("营销退回解析原补贴凭证失败，回退传入账户 bizNo={} orig={} : {}", bizNo, origBizNo, e.getMessage());
+        }
+        post(bizNo, target, SYS_MARKETING, amount, subject, refId);
     }
 
     private void post(String bizNo, String debitAccount, String creditAccount, long amount,

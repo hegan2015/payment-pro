@@ -123,6 +123,12 @@ public interface MarketingFacade {
     /** 查分摊（来源维度 + 目标维度）。 */
     Result<MarketingAllocDTO> getAllocation(String paymentId);
 
+    /** P-7 TCC：查支付单营销抵扣净额（Σ来源 USE − Σ来源 REFUND）。Try 预占后即可查，供 payment 侧记账。 */
+    Result<Long> deductionOf(String paymentId);
+
+    /** P-7 TCC：询价 Σ抵扣额（确定性口径，不预占不动资金），供 payment 侧 begin 前计算净实付。 */
+    Result<Long> quoteDeduction(MarketingTccContext ctx);
+
     /** 守恒校验（只读）：订单额 = 资金腿 + 营销腿，且营销腿 = Σ来源 = Σ目标。 */
     Result<MarketingConservationDTO> checkConservation(String paymentId, Long orderAmount, Long fundAmount);
 

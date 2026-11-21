@@ -206,12 +206,133 @@ public class ActivityService {
         });
     }
 
+    // ---------------- TCC 三阶段（P-7 支付宝式） ----------------
+
+    /** TCC Try：抢占活动预算 + 预补贴 + 来源分摊 USE 行。幂等 by (ACTIVITY_RESERVE, key)。 */
+    public ActivityUseDTO reserve(ActivityApplyRequest request) {
+        fundService.requireEnabled();
+        MarketingSupport.require(request != null && MarketingSupport.notBlank(request.getActivityId()), "activityId 必填");
+        MarketingSupport.require(MarketingSupport.notBlank(request.getPaymentId()), "paymentId 必填");
+        MarketingSupport.require(request.getOrderAmount() != null && request.getOrderAmount() > 0, "orderAmount 必须为正整数（分）");
+        String key = request.getActivityId() + ":" + request.getPaymentId();
+        String bizNo = MarketingSupport.FUND_PREFIX + "A:" + key;
+        MarketingSupport.requireKey(bizNo);
+        long orderAmount = request.getOrderAmount();
+        return idempotentTemplate.execute("ACTIVITY_RESERVE", key, ActivityUseDTO.class, () -> {
+            ActivityDTO activity = get(request.getActivityId());
+            long amount = validateActive(activity, orderAmount);
+            String memberId = MarketingSupport.notBlank(request.getMemberId()) ? request.getMemberId() : "UNKNOWN";
+            String accountId = fundService.resolveAccount(request.getMemberId(), request.getAccountId());
+            long now = System.currentTimeMillis();
+            int budget = activityMapper.consumeBudget(activity.getId(), amount, now);
+            if (budget != 1) {
+                throw new BizException(ResultCode.BIZ_ERROR, "活动预算不足或状态已变更: " + activity.getId());
+            }
+            // P-7 正确模型：Try 本地抢占预算 + USE 分摊（随模板事务提交），远程补贴在 Confirm。
+            fundService.recordSource(request.getPaymentId(), SOURCE, activity.getId(), amount,
+                    MarketingFundService.TYPE_USE, bizNo);
+            support.audit("ACTIVITY", activity.getId(), "RESERVE", null, CouponService.STATUS_FROZEN, amount, bizNo,
+                    request.getOperator(), "TCC 预占 payment=" + request.getPaymentId());
+            return frozenDto(activity, request, memberId, accountId, amount, orderAmount, bizNo);
+        });
+    }
+
+    /** TCC Confirm：落核销单（预算与预补贴、USE 分摊已在 Try）。幂等 by (ACTIVITY_APPLY, key)。 */
+    public ActivityUseDTO commit(ActivityApplyRequest request) {
+        fundService.requireEnabled();
+        String key = request.getActivityId() + ":" + request.getPaymentId();
+        String bizNo = MarketingSupport.FUND_PREFIX + "A:" + key;
+        long orderAmount = request.getOrderAmount();
+        return idempotentTemplate.execute("ACTIVITY_APPLY", key, ActivityUseDTO.class, () -> {
+            ActivityUseDTO byKey = useMapper.selectByKey(request.getActivityId(), request.getPaymentId());
+            if (byKey != null) {
+                return byKey;
+            }
+            ActivityDTO activity = get(request.getActivityId());
+            long amount = discountOf(activity, orderAmount);
+            MarketingSupport.requireBiz(amount > 0, "活动立减额为 0，不受理核销");
+            String memberId = MarketingSupport.notBlank(request.getMemberId()) ? request.getMemberId() : "UNKNOWN";
+            String accountId = fundService.resolveAccount(request.getMemberId(), request.getAccountId());
+            ActivityUseDTO use = frozenDto(activity, request, memberId, accountId, amount, orderAmount, bizNo);
+            use.setId(support.newId("AU"));
+            use.setStatus(CouponService.STATUS_USED);
+            useMapper.insert(use);
+            support.audit("ACTIVITY", activity.getId(), "USE", CouponService.STATUS_FROZEN, CouponService.STATUS_USED, amount,
+                    bizNo, request.getOperator(), "TCC 核销 payment=" + request.getPaymentId());
+            return use;
+        });
+    }
+
+    /** TCC Cancel：回滚预算 + 反向补贴 + 来源分摊 REFUND 行。空回滚由模板保护。幂等 by (ACTIVITY_RELEASE, key)。 */
+    public ActivityUseDTO release(String activityId, String paymentId, String accountId, long amount, String operator) {
+        fundService.requireEnabled();
+        MarketingSupport.require(MarketingSupport.notBlank(activityId) && MarketingSupport.notBlank(paymentId), "activityId/paymentId 必填");
+        String key = activityId + ":" + paymentId;
+        String bizNo = MarketingSupport.FUND_REFUND_PREFIX + "A:" + key;
+        MarketingSupport.requireKey(bizNo);
+        return idempotentTemplate.execute("ACTIVITY_RELEASE", key, ActivityUseDTO.class, () -> {
+            long now = System.currentTimeMillis();
+            activityMapper.releaseBudget(activityId, amount, now);
+            // P-7 正确模型：Cancel 本地回滚预算 + REFUND 分摊（抵消 Try USE）；补贴在 Confirm，Cancel 时未落不反向。
+            fundService.recordSource(paymentId, SOURCE, activityId, amount, MarketingFundService.TYPE_REFUND, bizNo);
+            support.audit("ACTIVITY", activityId, "RELEASE", CouponService.STATUS_FROZEN, null, amount, bizNo,
+                    operator, "TCC 释放预占 payment=" + paymentId);
+            ActivityUseDTO dto = new ActivityUseDTO();
+            dto.setActivityId(activityId);
+            dto.setPaymentId(paymentId);
+            dto.setAccountId(accountId);
+            dto.setAmount(amount);
+            dto.setBizNo(bizNo);
+            return dto;
+        });
+    }
+
+    private long validateActive(ActivityDTO activity, long orderAmount) {
+        long now = System.currentTimeMillis();
+        if (!"ACTIVE".equals(activity.getStatus())) {
+            throw new BizException(ResultCode.BIZ_ERROR, "活动非进行中: " + activity.getStatus());
+        }
+        if (activity.getExpireAt() != null && activity.getExpireAt() <= now) {
+            throw new BizException(ResultCode.BIZ_ERROR, "活动已过期: " + activity.getId());
+        }
+        if (orderAmount < MarketingSupport.nz(activity.getThreshold())) {
+            throw new BizException(ResultCode.BIZ_ERROR, "未达活动门槛：orderAmount=" + orderAmount
+                    + " threshold=" + activity.getThreshold());
+        }
+        long amount = discountOf(activity, orderAmount);
+        MarketingSupport.requireBiz(amount > 0, "活动立减额为 0，不受理核销");
+        return amount;
+    }
+
+    private ActivityUseDTO frozenDto(ActivityDTO activity, ActivityApplyRequest request, String memberId,
+                                     String accountId, long amount, long orderAmount, String bizNo) {
+        ActivityUseDTO use = new ActivityUseDTO();
+        use.setActivityId(activity.getId());
+        use.setPaymentId(request.getPaymentId());
+        use.setOrderId(request.getOrderId());
+        use.setMemberId(memberId);
+        use.setAccountId(accountId);
+        use.setAmount(amount);
+        use.setOrderAmount(orderAmount);
+        use.setBizNo(bizNo);
+        use.setStatus(CouponService.STATUS_FROZEN);
+        use.setRequestId(request.getRequestId());
+        use.setOperator(request.getOperator());
+        long now = System.currentTimeMillis();
+        use.setCreatedAt(now);
+        use.setUpdatedAt(now);
+        return use;
+    }
+
     public ActivityUseDTO refund(String activityUseId) {
         fundService.requireEnabled();
         MarketingSupport.require(MarketingSupport.notBlank(activityUseId), "activityUseId 必填");
         MarketingSupport.requireKey(activityUseId);
         return idempotentTemplate.execute("ACTIVITY_REFUND", activityUseId, ActivityUseDTO.class, () -> {
             ActivityUseDTO use = useMapper.selectById(activityUseId);
+            if (use == null) {
+                use = useMapper.selectByActivity(activityUseId);
+            }
             MarketingSupport.requireFound(use, "活动核销单不存在: " + activityUseId);
             if (CouponService.STATUS_REFUNDED.equals(use.getStatus())) {
                 return use;
@@ -222,7 +343,7 @@ public class ActivityService {
             long now = System.currentTimeMillis();
             String bizNo = MarketingSupport.FUND_REFUND_PREFIX + "A:" + use.getActivityId() + ":" + use.getPaymentId();
             MarketingSupport.requireKey(bizNo);
-            int cas = useMapper.casRefund(activityUseId, now);
+            int cas = useMapper.casRefund(use.getId(), now);
             if (cas != 1) {
                 throw new BizException(ResultCode.CONFLICT, "活动核销单并发变更，退回未受理: " + activityUseId);
             }

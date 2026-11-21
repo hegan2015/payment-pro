@@ -21,6 +21,7 @@ import com.qoder.payment.facade.member.MemberDTO;
 import com.qoder.payment.facade.member.MemberFacade;
 import com.qoder.payment.facade.payment.FundPayRequest;
 import com.qoder.payment.facade.payment.PayRequest;
+import com.qoder.payment.facade.marketing.MarketingTccContext;
 import com.qoder.payment.facade.payment.PayResultDTO;
 import com.qoder.payment.facade.payment.PaymentDTO;
 import com.qoder.payment.facade.payment.RefundDTO;
@@ -198,21 +199,17 @@ public class PaymentService {
             return result(replayed, true);
         }
 
-        // ==================== P2-E P-7 营销抵扣编排（marketing=false 时整段跳过，零影响） ====================
+        // ==================== P-7 支付宝式：营销纳入 TCC 事务边界（marketing=false 时整段跳过，零影响） ====================
+        // 正确模型：营销 Try 只本地预占权益（无远程资金），补贴直补商户在 Confirm 落（幂等可重试，崩溃恢复必达）；
+        // accounting Try 冻结用户净实付（订单额−Σ抵扣）。begin 前询价 Σ抵扣以构建 accounting 净实付上下文。
+        MarketingTccContext mktCtx = null;
+        long mktDeduction = 0L;
         if (marketing) {
             try {
-                marketingPayService.apply(request, order, payment.getId(), request.getAccountId());
-                // 补贴已入付款户（D SYS_MARKETING / C 用户户），此时才校验余额充足性（净实付=订单额−Σ抵扣）
-                AccountDTO after = accountFacade.get(request.getAccountId()).orThrow();
-                if (!"ACTIVE".equals(after.getStatus())) {
-                    throw new BizException(ResultCode.BIZ_ERROR, "付款账户已冻结: " + after.getId());
-                }
-                if (after.getBalance() < amount) {
-                    throw new BizException(ResultCode.BIZ_ERROR,
-                            "账户余额不足（营销抵扣后仍需 " + amount + "，可用 " + after.getBalance() + "）: " + after.getId());
-                }
+                mktCtx = marketingPayService.buildContext(request, order, payment.getId(),
+                        request.getAccountId(), payment.getMerchantAccountId());
+                mktDeduction = marketingPayService.quoteTotal(mktCtx);
             } catch (RuntimeException e) {
-                marketingPayService.rollbackQuietly(payment.getId(), "受理失败: " + e.getMessage());
                 paymentMapper.finish(payment.getId(), "FAILED", MarketingPayService.shortReason("营销抵扣编排失败: " + e.getMessage()));
                 mirror("payment", payment.getId());
                 MetricsSupport.payFail(method, payment.getBizType());
@@ -241,10 +238,7 @@ public class PaymentService {
                     mirror("payment", payment.getId());
                     log.warn("风控拒绝 paymentId={} reason={}", payment.getId(), riskResult.getReason());
                     MetricsSupport.payFail(method, payment.getBizType());
-                    // P-7：风控拒绝须退回已核销营销权益（资金反向），绝不留下「支付失败但补贴已发」
-                    if (marketing) {
-                        marketingPayService.rollbackQuietly(payment.getId(), "风控拒绝: " + riskResult.getReason());
-                    }
+                    // P-7 TCC：风控拒绝在 begin 之前，营销 Try 尚未执行（无预占/无补贴），无需回退。
                     throw new BizException(ResultCode.BIZ_ERROR, "风控拒绝: " + riskResult.getReason());
                 }
                 log.info("CHALLENGE 续付授权放行 paymentId={} requestId={}", payment.getId(), request.getRequestId());
@@ -258,7 +252,12 @@ public class PaymentService {
             mirror("payment", payment.getId());
             log.info("支付受理 paymentId={} orderId={} amount={} fee={} method={} requestId={} xid={} awaiting={}",
                     payment.getId(), order.getId(), amount, fee, method, request.getRequestId(), xid, awaiting);
-            coordinator.registerBranch(xid, "accounting", "PAY", accountingContext(payment, order, false));
+            // P-7：营销分支注册在 accounting 之前 ⇒ tryAll 按 seq 先驱动营销 Try（本地预占权益）；
+            // accounting Try 冻结用户净实付（订单额−Σ抵扣，直补商户模型）；失败协调器统一 Cancel（本地回滚干净）。
+            if (mktCtx != null) {
+                coordinator.registerBranch(xid, "marketing", "PAY", mktCtx);
+            }
+            coordinator.registerBranch(xid, "accounting", "PAY", accountingContext(payment, order, false, mktDeduction));
             if ("CARD".equals(method)) {
                 ChannelTccContext channelCtx = channelContext(payment.getId(), null, payment.getCardNo(), amount);
                 channelCtx.setChannelCode(routedChannel);
@@ -273,6 +272,10 @@ public class PaymentService {
                 throw new BizException(ResultCode.CONFLICT, "支付已关闭/回滚，受理让位: " + payment.getId());
             }
             coordinator.tryAll(xid);
+            // P-7：Try 成功后落 payment 侧营销明细 + APPLIED（抵扣额查营销域来源账，Try 预占即记）。
+            if (mktCtx != null) {
+                marketingPayService.recordApplied(payment.getId(), mktCtx, request.getMarketing(), order);
+            }
             if (awaiting) {
                 // 资金仍冻结、订单仍 PAYING、支付单 PROCESSING；等渠道终态回执/补单查询驱动二阶段
                 log.info("银行卡异步渠道已受理，等待渠道终态 paymentId={} xid={}", payment.getId(), xid);
@@ -281,11 +284,9 @@ public class PaymentService {
             }
             return result(require(payment.getId()), false);
         } catch (RuntimeException e) {
-            // P-7：受理链路任何异常（含 TCC Try 失败/受理让位）都退回已核销营销权益；
-            // 无营销诉求时本 catch 只做原样重抛，行为与改造前逐字节一致。
-            if (marketing) {
-                marketingPayService.rollbackQuietly(payment.getId(), "受理失败: " + e.getMessage());
-            }
+            // P-7 TCC：营销预占/预补贴在 Try 阶段（begin 之后），任何失败由协调器 driveCancel 驱动营销分支
+            // Cancel 释放预占+反向补贴；受理前失败（风控拒/buildContext 失败）营销 Try 未执行无需回退。
+            // 故此处不再 payment 侧手动回退营销，无营销诉求时行为与改造前逐字节一致。
             throw e;
         }
     }
@@ -633,17 +634,23 @@ public class PaymentService {
     }
 
     private AccountingTccContext accountingContext(PaymentDO payment, OrderDTO order, boolean reversed) {
+        return accountingContext(payment, order, reversed, 0L);
+    }
+
+    /** P-7 直补商户模型：deduction=营销抵扣额，用户扣净实付（全额−抵扣），商户 C（净实付−fee），fee 基数仍订单全额。 */
+    private AccountingTccContext accountingContext(PaymentDO payment, OrderDTO order, boolean reversed, long deduction) {
         AccountingTccContext ctx = new AccountingTccContext();
         ctx.setBizNo(payment.getId());
         ctx.setRefId(order.getId());
         ctx.setSubject("支付-" + order.getSubject());
         ctx.setReversed(reversed);
-        long net = payment.getAmount() - payment.getFee();
+        long payAmount = payment.getAmount() - deduction;
+        long net = payAmount - payment.getFee();
         List<TransferLineDTO> lines = new ArrayList<>();
         if ("BALANCE".equals(payment.getMethod())) {
-            lines.add(line(payment.getPayerAccountId(), "D", payment.getAmount()));
+            lines.add(line(payment.getPayerAccountId(), "D", payAmount));
         } else {
-            lines.add(line("SYS_CASH", "D", payment.getAmount()));
+            lines.add(line("SYS_CASH", "D", payAmount));
         }
         lines.add(line(payment.getMerchantAccountId(), "C", net));
         if (payment.getFee() > 0) {

@@ -188,11 +188,19 @@ public class ReconService {
                     long debit = transfer.getLines().stream()
                             .filter(l -> "D".equals(l.getDir()))
                             .mapToLong(l -> l.getAmount()).sum();
-                    if (debit != payment.getAmount()) {
+                    // P-7 直补商户：账务资金腿借方=用户净实付（订单额−营销抵扣）；兼容旧模型（补贴入用户户，借方=订单全额）。
+                    // 借方==净实付（新）或==订单全额（旧）皆一致；营销补贴另落 MKT 凭证由营销域 fundCheck 核验。
+                    // 营销已整体回退（ROLLED_BACK）：补贴已反向但 accounting 净实付腿留存，借方≤订单全额即一致。
+                    long expectedDebit = payment.getAmount()
+                            - (payment.getMarketingAmount() == null ? 0L : payment.getMarketingAmount());
+                    boolean rolledBack = "ROLLED_BACK".equals(payment.getMarketingStatus());
+                    boolean consistent = debit == expectedDebit || debit == payment.getAmount()
+                            || (rolledBack && debit <= payment.getAmount());
+                    if (!consistent) {
                         missing++;
                         acctItems.add(item(DisputeClassifier.AMOUNT_MISMATCH, payment.getId(), payment.getId(),
-                                payment.getAmount(), DisputeClassifier.REVERSE_AND_REPOST,
-                                "账务借方 " + debit + " ≠ 支付金额 " + payment.getAmount()));
+                                expectedDebit, DisputeClassifier.REVERSE_AND_REPOST,
+                                "账务借方 " + debit + " ≠ 净实付 " + expectedDebit + " 且 ≠ 订单全额 " + payment.getAmount()));
                     }
                 } catch (Exception e) {
                     // RC-J COMBO 组合支付（I 泳道 P-6）：账务凭证按腿落账（bizNo=legId），主单无直接凭证。
@@ -210,11 +218,17 @@ public class ReconService {
                                             .filter(l -> "D".equals(l.getDir()))
                                             .mapToLong(l -> l.getAmount()).sum();
                                 }
-                                if (legDebit != payment.getAmount()) {
+                                long comboExpected = payment.getAmount()
+                                        - (payment.getMarketingAmount() == null ? 0L : payment.getMarketingAmount());
+                                boolean comboRolledBack = "ROLLED_BACK".equals(payment.getMarketingStatus());
+                                boolean comboConsistent = legDebit == comboExpected || legDebit == payment.getAmount()
+                                        || (comboRolledBack && legDebit <= payment.getAmount());
+                                if (!comboConsistent) {
                                     missing++;
                                     acctItems.add(item(DisputeClassifier.AMOUNT_MISMATCH, payment.getId(), payment.getId(),
-                                            payment.getAmount(), DisputeClassifier.REVERSE_AND_REPOST,
-                                            "COMBO 各腿凭证借方合计 " + legDebit + " ≠ 支付金额 " + payment.getAmount()));
+                                            comboExpected, DisputeClassifier.REVERSE_AND_REPOST,
+                                            "COMBO 各腿凭证借方合计 " + legDebit + " ≠ 净实付 " + comboExpected
+                                                    + " 且 ≠ 订单全额 " + payment.getAmount()));
                                 }
                                 continue;
                             }

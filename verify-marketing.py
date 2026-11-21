@@ -634,8 +634,12 @@ def sec10_fund_guard():
     fc = mok("/fund-check", step=False)
     check("营销资金恒等 diff=0（Σ核销−Σ退回 = SYS_MARKETING 出账）", fc["diff"] == 0, str(fc))
     check("营销资金 balanced=true", fc["balanced"] is True, str(fc))
-    check("SYS_MARKETING 借方累计 = 营销累计核销总额（gross）", fc["sysMarketingDebit"] == fc["netUse"], str(fc))
-    check("SYS_MARKETING 贷方累计 = 营销累计退回总额", fc["sysMarketingCredit"] == fc["netRefund"], str(fc))
+    # P-7 TCC：USE 分摊在 Try 落（含已取消单），补贴在 Confirm 落（仅成功单）；取消单 Try USE 由 Cancel REFUND 抵消且未落补贴。
+    # 故「借方= gross USE」不再成立，正确恒等=取消单 USE 与 REFUND 对称（netUse−借方 == netRefund−贷方）+ 净额守恒。
+    check("SYS_MARKETING 取消单 USE/REFUND 对称（TCC：Try USE 含取消单，补贴仅成功单）",
+          fc["netUse"] - fc["sysMarketingDebit"] == fc["netRefund"] - fc["sysMarketingCredit"], str(fc))
+    check("SYS_MARKETING 净额守恒（netMarketing = 借方−贷方出账）",
+          fc["netMarketing"] == fc["sysMarketingOutflow"], str(fc))
     check("SYS_MARKETING 余额 = −出账（营销支出科目 6002）",
           fc["sysMarketingBalance"] == -fc["sysMarketingOutflow"], str(fc))
     check("账务试算 D=C", fc["trialBalanced"] is True and fc["trialDebit"] == fc["trialCredit"], str(fc))

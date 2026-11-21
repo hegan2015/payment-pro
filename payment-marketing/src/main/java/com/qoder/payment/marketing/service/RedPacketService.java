@@ -219,12 +219,143 @@ public class RedPacketService {
         });
     }
 
+    // ---------------- TCC 三阶段（P-7 支付宝式） ----------------
+
+    /** TCC Try：预占红包 AVAILABLE→FROZEN + 预补贴 + 来源分摊 USE 行。幂等 by (REDPACKET_RESERVE, key)。 */
+    public CouponUseDTO reserve(RedPacketUseRequest request) {
+        fundService.requireEnabled();
+        MarketingSupport.require(request != null && MarketingSupport.notBlank(request.getRedPacketId()), "redPacketId 必填");
+        MarketingSupport.require(MarketingSupport.notBlank(request.getPaymentId()), "paymentId 必填");
+        String key = request.getRedPacketId() + ":" + request.getPaymentId();
+        String bizNo = MarketingSupport.FUND_PREFIX + "R:" + key;
+        MarketingSupport.requireKey(bizNo);
+        return idempotentTemplate.execute("REDPACKET_RESERVE", key, CouponUseDTO.class, () -> {
+            RedPacketDTO packet = get(request.getRedPacketId());
+            long amount = validateUsable(packet, request);
+            String accountId = fundService.resolveAccount(packet.getMemberId(), request.getAccountId());
+            long now = System.currentTimeMillis();
+            if (!CouponService.STATUS_FROZEN.equals(packet.getStatus())) {
+                int cas = packetMapper.casReserve(packet.getId(), now);
+                if (cas != 1) {
+                    throw new BizException(ResultCode.CONFLICT, "红包状态并发变更，预占未受理: " + packet.getId());
+                }
+            }
+            // P-7 正确模型：Try 本地预占 + USE 分摊（随模板事务提交），远程补贴在 Confirm。
+            fundService.recordSource(request.getPaymentId(), SOURCE, packet.getId(), amount,
+                    MarketingFundService.TYPE_USE, bizNo);
+            support.audit("RED_PACKET", packet.getId(), "RESERVE", CouponService.STATUS_AVAILABLE,
+                    CouponService.STATUS_FROZEN, amount, bizNo, request.getOperator(), "TCC 预占 payment=" + request.getPaymentId());
+            return frozenDto(packet, request, accountId, amount, bizNo);
+        });
+    }
+
+    /** TCC Confirm：核销 FROZEN→USED + 落核销单（预补贴与分摊已在 Try）。幂等 by (REDPACKET_USE, key)。 */
+    public CouponUseDTO commit(RedPacketUseRequest request) {
+        fundService.requireEnabled();
+        String key = request.getRedPacketId() + ":" + request.getPaymentId();
+        String bizNo = MarketingSupport.FUND_PREFIX + "R:" + key;
+        return idempotentTemplate.execute("REDPACKET_USE", key, CouponUseDTO.class, () -> {
+            CouponUseDTO byPacket = useMapper.selectByRedPacket(request.getRedPacketId());
+            if (byPacket != null) {
+                return byPacket;
+            }
+            RedPacketDTO packet = get(request.getRedPacketId());
+            long amount = validateUsable(packet, request);
+            String accountId = fundService.resolveAccount(packet.getMemberId(), request.getAccountId());
+            long now = System.currentTimeMillis();
+            String useId = support.newId("RU");
+            int cas = packetMapper.casCommit(packet.getId(), useId, now);
+            if (cas != 1) {
+                throw new BizException(ResultCode.CONFLICT, "红包非预占态，核销未受理: " + packet.getStatus());
+            }
+            CouponUseDTO use = frozenDto(packet, request, accountId, amount, bizNo);
+            use.setId(useId);
+            use.setStatus(CouponService.STATUS_USED);
+            useMapper.insert(use);
+            support.audit("RED_PACKET", packet.getId(), "USE", CouponService.STATUS_FROZEN,
+                    CouponService.STATUS_USED, amount, bizNo, request.getOperator(), "TCC 核销 payment=" + request.getPaymentId());
+            return use;
+        });
+    }
+
+    /** TCC Cancel：释放 FROZEN→AVAILABLE + 反向补贴 + 来源分摊 REFUND 行。空回滚由模板保护。幂等 by (REDPACKET_RELEASE, key)。 */
+    public CouponUseDTO release(String redPacketId, String paymentId, String accountId, long amount, String operator) {
+        fundService.requireEnabled();
+        MarketingSupport.require(MarketingSupport.notBlank(redPacketId) && MarketingSupport.notBlank(paymentId), "redPacketId/paymentId 必填");
+        String key = redPacketId + ":" + paymentId;
+        String bizNo = MarketingSupport.FUND_REFUND_PREFIX + "R:" + key;
+        MarketingSupport.requireKey(bizNo);
+        return idempotentTemplate.execute("REDPACKET_RELEASE", key, CouponUseDTO.class, () -> {
+            RedPacketDTO packet = get(redPacketId);
+            long now = System.currentTimeMillis();
+            if (CouponService.STATUS_FROZEN.equals(packet.getStatus())) {
+                int cas = packetMapper.casRelease(redPacketId, now);
+                if (cas != 1) {
+                    throw new BizException(ResultCode.CONFLICT, "红包预占态并发变更，释放未受理: " + redPacketId);
+                }
+                support.audit("RED_PACKET", redPacketId, "RELEASE", CouponService.STATUS_FROZEN,
+                        CouponService.STATUS_AVAILABLE, amount, bizNo, operator, "TCC 释放预占 payment=" + paymentId);
+            } else if (!CouponService.STATUS_AVAILABLE.equals(packet.getStatus())) {
+                throw new BizException(ResultCode.CONFLICT, "红包非预占/可用态，不可释放: " + packet.getStatus());
+            }
+            // P-7 正确模型：Cancel 本地释放 + REFUND 分摊（抵消 Try USE）；补贴在 Confirm，Cancel 时未落不反向。
+            fundService.recordSource(paymentId, SOURCE, redPacketId, amount, MarketingFundService.TYPE_REFUND, bizNo);
+            CouponUseDTO dto = new CouponUseDTO();
+            dto.setVoucherId(redPacketId);
+            dto.setPaymentId(paymentId);
+            dto.setAccountId(accountId);
+            dto.setAmount(amount);
+            dto.setBizNo(bizNo);
+            dto.setStatus(CouponService.STATUS_AVAILABLE);
+            return dto;
+        });
+    }
+
+    private long validateUsable(RedPacketDTO packet, RedPacketUseRequest request) {
+        if (!CouponService.STATUS_AVAILABLE.equals(packet.getStatus()) && !CouponService.STATUS_FROZEN.equals(packet.getStatus())) {
+            throw new BizException(ResultCode.CONFLICT, "红包状态不可核销: " + packet.getStatus());
+        }
+        long now = System.currentTimeMillis();
+        if (packet.getExpireAt() <= now) {
+            throw new BizException(ResultCode.BIZ_ERROR, "红包已过期，不可核销: " + packet.getId());
+        }
+        if (MarketingSupport.notBlank(request.getMemberId()) && !request.getMemberId().equals(packet.getMemberId())) {
+            throw new BizException(ResultCode.PARAM_ERROR, "红包归属会员与请求不一致");
+        }
+        long amount = request.getAmount() != null ? request.getAmount() : packet.getAmount();
+        MarketingSupport.require(amount > 0 && amount <= packet.getAmount(),
+                "核销额需在 (0, 红包面额] 内：amount=" + amount + " face=" + packet.getAmount());
+        return amount;
+    }
+
+    private CouponUseDTO frozenDto(RedPacketDTO packet, RedPacketUseRequest request, String accountId, long amount, String bizNo) {
+        CouponUseDTO use = new CouponUseDTO();
+        use.setKind(SOURCE);
+        use.setVoucherId(packet.getId());
+        use.setPaymentId(request.getPaymentId());
+        use.setOrderId(request.getOrderId());
+        use.setMemberId(packet.getMemberId());
+        use.setAccountId(accountId);
+        use.setAmount(amount);
+        use.setBizNo(bizNo);
+        use.setStatus(CouponService.STATUS_FROZEN);
+        use.setRequestId(request.getRequestId());
+        use.setOperator(request.getOperator());
+        long now = System.currentTimeMillis();
+        use.setCreatedAt(now);
+        use.setUpdatedAt(now);
+        return use;
+    }
+
     public CouponUseDTO refund(String redPacketUseId) {
         fundService.requireEnabled();
         MarketingSupport.require(MarketingSupport.notBlank(redPacketUseId), "redPacketUseId 必填");
         MarketingSupport.requireKey(redPacketUseId);
         return idempotentTemplate.execute("REDPACKET_REFUND", redPacketUseId, CouponUseDTO.class, () -> {
             CouponUseDTO use = useMapper.selectById(redPacketUseId);
+            if (use == null) {
+                use = useMapper.selectByRedPacket(redPacketUseId);
+            }
             MarketingSupport.requireFound(use, "核销单不存在: " + redPacketUseId);
             if (CouponService.STATUS_REFUNDED.equals(use.getStatus())) {
                 return use;
@@ -235,7 +366,7 @@ public class RedPacketService {
             long now = System.currentTimeMillis();
             String bizNo = MarketingSupport.FUND_REFUND_PREFIX + "R:" + use.getVoucherId() + ":" + use.getPaymentId();
             MarketingSupport.requireKey(bizNo);
-            int cas = useMapper.casRefund(redPacketUseId, now);
+            int cas = useMapper.casRefund(use.getId(), now);
             if (cas != 1) {
                 throw new BizException(ResultCode.CONFLICT, "核销单并发变更，退回未受理: " + redPacketUseId);
             }

@@ -257,6 +257,106 @@ public class PointsService {
         });
     }
 
+    // ---------------- TCC 三阶段（P-7 支付宝式） ----------------
+
+    /** TCC Try：冻结积分（纯权益）+ 预补贴 + 来源分摊 USE 行。幂等 by (POINTS_RESERVE, PU:paymentId)。 */
+    public PointsLogDTO reserve(PointsUseRequest request) {
+        fundService.requireEnabled();
+        MarketingSupport.require(request != null && MarketingSupport.notBlank(request.getMemberId()), "memberId 必填");
+        MarketingSupport.require(request.getPoints() != null && request.getPoints() > 0, "points 必须为正整数");
+        MarketingSupport.require(MarketingSupport.notBlank(request.getPaymentId()), "paymentId 必填");
+        long points = request.getPoints();
+        long amount = points / support.pointsRate();
+        MarketingSupport.requireBiz(amount > 0, "积分不足抵扣 1 分：points=" + points);
+        String useBizNo = "PU:" + request.getPaymentId();
+        String fundBizNo = MarketingSupport.FUND_PREFIX + "P:" + useBizNo;
+        MarketingSupport.requireKey(fundBizNo);
+        return idempotentTemplate.execute("POINTS_RESERVE", useBizNo, PointsLogDTO.class, () -> {
+            ensureAccount(request.getMemberId());
+            String accountId = fundService.resolveAccount(request.getMemberId(), request.getAccountId());
+            PointsFreezeRequest fr = new PointsFreezeRequest();
+            fr.setMemberId(request.getMemberId());
+            fr.setPoints(points);
+            fr.setBizNo("PF:" + request.getPaymentId());
+            fr.setOperator(request.getOperator());
+            fr.setReason("TCC 预占 payment=" + request.getPaymentId());
+            freeze(fr);
+            // P-7 正确模型：Try 本地冻结积分 + USE 分摊（随模板事务提交），远程补贴在 Confirm。
+            fundService.recordSource(request.getPaymentId(), SOURCE, useBizNo, amount,
+                    MarketingFundService.TYPE_USE, fundBizNo);
+            PointsLogDTO row = new PointsLogDTO();
+            row.setMemberId(request.getMemberId());
+            row.setChangeAmount(-points);
+            row.setType(TYPE_FREEZE);
+            row.setBizNo(useBizNo);
+            row.setRefId(request.getPaymentId());
+            row.setFundBizNo(fundBizNo);
+            row.setAccountId(accountId);
+            row.setAmount(amount);
+            return row;
+        });
+    }
+
+    /** TCC Confirm：结算冻结积分（fromFrozen）+ 落 SETTLE 流水（预补贴与 USE 分摊已在 Try，幂等不重复）。 */
+    public PointsLogDTO commit(PointsUseRequest request) {
+        fundService.requireEnabled();
+        long points = request.getPoints();
+        long amount = points / support.pointsRate();
+        String bizNo = MarketingSupport.notBlank(request.getBizNo()) ? request.getBizNo() : "PU:" + request.getPaymentId();
+        String fundBizNo = MarketingSupport.FUND_PREFIX + "P:" + bizNo;
+        return idempotentTemplate.execute("POINTS_USE", bizNo, PointsLogDTO.class, () -> {
+            PointsLogDTO existing = logMapper.selectByKey(bizNo, TYPE_SETTLE);
+            if (existing != null) {
+                return existing;
+            }
+            long now = System.currentTimeMillis();
+            ensureAccount(request.getMemberId());
+            String accountId = fundService.resolveAccount(request.getMemberId(), request.getAccountId());
+            int cas = accountMapper.settleFrozen(request.getMemberId(), points, now);
+            if (cas != 1) {
+                throw new BizException(ResultCode.BIZ_ERROR, "冻结积分不足：points=" + points);
+            }
+            consumeBatches(request.getMemberId(), points, now);
+            // P-7 正确模型：补贴由 MarketingTccService.commitAll 直补商户（此处不补贴，避免与商户补贴 bizNo 幂等冲突）；
+            // USE 分摊已在 Try 落，此处不重复记。
+            PointsLogDTO row = writeLog(request.getMemberId(), -points, TYPE_SETTLE, bizNo, request.getPaymentId(),
+                    fundBizNo, accountId, amount, request.getOperator(), now);
+            support.audit("POINTS", request.getMemberId(), TYPE_SETTLE, null, null, points, fundBizNo,
+                    request.getOperator(), "TCC 积分核销 payment=" + request.getPaymentId() + " amount=" + amount);
+            return row;
+        });
+    }
+
+    /** TCC Cancel：解冻积分 + 反向补贴 + 来源分摊 REFUND 行。空回滚由模板保护。幂等 by (POINTS_RELEASE, PU:paymentId)。 */
+    public PointsLogDTO release(String memberId, String paymentId, String accountId, long points, long amount, String operator) {
+        fundService.requireEnabled();
+        MarketingSupport.require(MarketingSupport.notBlank(memberId) && MarketingSupport.notBlank(paymentId), "memberId/paymentId 必填");
+        String useBizNo = "PU:" + paymentId;
+        String fundBizNo = MarketingSupport.FUND_REFUND_PREFIX + "P:" + useBizNo;
+        MarketingSupport.requireKey(fundBizNo);
+        return idempotentTemplate.execute("POINTS_RELEASE", useBizNo, PointsLogDTO.class, () -> {
+            PointsFreezeRequest fr = new PointsFreezeRequest();
+            fr.setMemberId(memberId);
+            fr.setPoints(points);
+            fr.setBizNo("PF:" + paymentId);
+            fr.setOperator(operator);
+            fr.setReason("TCC 释放预占 payment=" + paymentId);
+            unfreeze(fr);
+            // P-7 正确模型：Cancel 本地解冻 + REFUND 分摊（抵消 Try USE）；补贴在 Confirm，Cancel 时未落不反向。
+            fundService.recordSource(paymentId, SOURCE, useBizNo, amount, MarketingFundService.TYPE_REFUND, fundBizNo);
+            PointsLogDTO row = new PointsLogDTO();
+            row.setMemberId(memberId);
+            row.setChangeAmount(points);
+            row.setType(TYPE_UNFREEZE);
+            row.setBizNo(useBizNo);
+            row.setRefId(paymentId);
+            row.setFundBizNo(fundBizNo);
+            row.setAccountId(accountId);
+            row.setAmount(amount);
+            return row;
+        });
+    }
+
     // ---------------- 退回 ----------------
 
     public PointsLogDTO refund(String origBizNo, String requestId) {

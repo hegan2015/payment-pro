@@ -37,6 +37,19 @@ public interface RedPacketMapper {
             + "WHERE id=#{id} AND status='AVAILABLE'")
     int casUse(@Param("id") String id, @Param("useId") String useId, @Param("now") long now);
 
+    /** TCC Try 预占：AVAILABLE → FROZEN。 */
+    @Update("UPDATE red_packet SET status='FROZEN', updated_at=#{now} WHERE id=#{id} AND status='AVAILABLE'")
+    int casReserve(@Param("id") String id, @Param("now") long now);
+
+    /** TCC Confirm 核销：FROZEN → USED。 */
+    @Update("UPDATE red_packet SET status='USED', use_id=#{useId}, updated_at=#{now} "
+            + "WHERE id=#{id} AND status='FROZEN'")
+    int casCommit(@Param("id") String id, @Param("useId") String useId, @Param("now") long now);
+
+    /** TCC Cancel 释放：FROZEN → AVAILABLE。 */
+    @Update("UPDATE red_packet SET status='AVAILABLE', updated_at=#{now} WHERE id=#{id} AND status='FROZEN'")
+    int casRelease(@Param("id") String id, @Param("now") long now);
+
     @Update("UPDATE red_packet SET status='REFUNDED', updated_at=#{now} WHERE id=#{id} AND status='USED'")
     int casRefund(@Param("id") String id, @Param("now") long now);
 
